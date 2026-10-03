@@ -43,6 +43,7 @@ export function openStore(file) {
     getFile: id => q('SELECT * FROM files WHERE id = ?').get(id),
     filesIn: folder => q('SELECT * FROM files WHERE folder = ? ORDER BY created').all(folder),
     setFileDescr: (id, d) => q('UPDATE files SET descr = ? WHERE id = ?').run(d, id),
+    delFile: id => q('DELETE FROM files WHERE id = ?').run(id),
     // outbox (emails + Telegram messages are sent after the request, with retries)
     enqueue: (kind, payload) => q('INSERT INTO outbox (kind, payload, next_at, created) VALUES (?, ?, ?, ?)').run(kind, JSON.stringify(payload), Date.now(), Date.now()),
     due: (limit = 20) => q('SELECT * FROM outbox WHERE sent_at IS NULL AND next_at <= ? ORDER BY id LIMIT ?').all(Date.now(), limit),

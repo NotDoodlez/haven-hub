@@ -17,7 +17,7 @@ const CID = '1234-test.apps.googleusercontent.com';
 function setupHub(opts = {}) {
   const gas = createGas({ tz: 'Asia/Tashkent' }), be = loadBackend(CODE, gas);
   const r = be.post({ action: 'setup', sheet: 'https://docs.google.com/spreadsheets/d/' + gas._ss.getId() + '/edit', hub: HUB, name: 'Ada Lovelace', email: 'ada@example.com',
-    event: { name: 'Haven Springfield', city: 'Springfield', start: '2026-11-14', end: '2026-11-15', timezone: 'Asia/Tashkent' }, starter: false });
+    event: { name: 'Haven Springfield', city: 'Springfield', start: '2026-11-14', end: '2026-11-15', timezone: 'Asia/Tashkent' }, starter: false, invites: false });
   assert.equal(r.ok, true, r.error);
   const h = { gas, be, admin: { u: r.key, t: r.token } };
   h.as = (who, body) => be.post(Object.assign({}, body, { u: who.u, t: who.t }));
@@ -179,7 +179,7 @@ async function boot(env = {}) {
   const post = async body => (await fetch(base + '/api', { method: 'POST', body: JSON.stringify(body) })).json();
   const get = async q => (await fetch(base + '/api?' + new URLSearchParams(q))).json();
   const { code } = await hub.admin['setup-code']();
-  const r = await post({ action: 'setup', sheet: code, site: 'https://hub.example.xyz', name: 'Ada Admin', email: 'ada@example.com', event: { name: 'Haven Test', start: '2026-11-14', end: '2026-11-15', timezone: 'Asia/Tashkent' }, starter: false });
+  const r = await post({ action: 'setup', sheet: code, site: 'https://hub.example.xyz', name: 'Ada Admin', email: 'ada@example.com', event: { name: 'Haven Test', start: '2026-11-14', end: '2026-11-15', timezone: 'Asia/Tashkent' }, starter: false, invites: false });
   assert.equal(r.ok, true, r.error);
   const admin = { u: r.key, t: r.token };
   const add = async person => { const x = await post(Object.assign({ action: 'person.add', person }, admin)); assert.equal(x.ok, true, x.error); return { u: x.person.key, t: new URL(x.link).searchParams.get('t') }; };

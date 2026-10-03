@@ -1,5 +1,5 @@
 /**
- * Haven Hub — the backend for one Haven's Team Hub.                                             v4.5.1
+ * Haven Hub — the backend for one Haven's Team Hub.                                             v5.0.0
  *
  * A Google Sheet is the database (you can edit it by hand). This script, bound to that Sheet, is:
  *   - the JSON API for the website  https://notazizelse.github.io/haven-hub/?hub=<your deployment id>
@@ -15,7 +15,7 @@
  * The URL stays the same. Secrets never go in this file: personal tokens live in the Sheet, the bot token in Script properties.
  */
 
-const HUB_VERSION = '4.5.1';
+const HUB_VERSION = '5.0.0';
 // On your own server (server/index.mjs) this same file runs on Node; HUB_SERVER is then provided by the server.
 const SELF_HOSTED = typeof HUB_SERVER !== 'undefined' && !!HUB_SERVER;
 const DEFAULT_SITE = 'https://notazizelse.github.io/haven-hub';
@@ -32,19 +32,25 @@ const TABS = {
   Meetings: ['date', 'time', 'where', 'what'],
   Rules: ['title', 'text'],
   Milestones: ['date', 'label', 'kind', 'public', 'done'],
-  Applications: ['id', 'time', 'name', 'contact', 'age_group', 'interest', 'note', 'status', 'handled_by', 'email', 'verified', 'sub', 'person'],
+  Applications: ['id', 'time', 'name', 'contact', 'age_group', 'interest', 'note', 'status', 'handled_by', 'email', 'verified', 'sub', 'person', 'lang', 'school', 'availability'],
   Sponsors: ['name', 'logo_url', 'link', 'note', 'id', 'tier', 'blurb', 'public', 'order', 'logo_file'],
-  Resources: ['id', 'title', 'url', 'kind', 'section', 'private', 'thumb', 'note', 'order', 'added_by', 'added_at'],
+  Resources: ['id', 'title', 'url', 'kind', 'section', 'private', 'thumb', 'note', 'order', 'added_by', 'added_at', 'file', 'mime', 'size', 'preview'],
+  Signups: ['date', 'count', 'source', 'note', 'by', 'time'],
+  Inbox: ['id', 'time', 'from', 'subject', 'snippet', 'link', 'status', 'handled_by', 'task', 'mailbox', 'got_at'],
   Links: ['name', 'access', 'personal_link', 'telegram_connected', 'message_to_send'],
+  Invites: ['code', 'key', 'created_at', 'expires_at', 'used_at', 'used_how', 'by'],
   Report: ['time', 'what', 'detail'],
 };
 const STATUSES = ['Not started', 'In progress', 'Blocked', 'Done', 'Dropped'];
 /** What this backend can do. The website shows a feature only when the hub lists it (Apps Script hubs update Code.gs when they get round to it). */
-const FEATURES = ['files', 'unassigned', 'sponsors', 'photos', 'profiles', 'appmatch'];
+const FEATURES = ['files', 'unassigned', 'sponsors', 'photos', 'profiles', 'appmatch', 'apply', 'invites', 'signups', 'inbox', 'uploads'];
 const ACCESS = ['admin', 'lead', 'member', 'viewer'];
 const RANK = { viewer: 0, member: 1, lead: 2, admin: 3 };
 const NEED = { any: 0, member: 1, lead: 2, admin: 3 };
 const NOTIFY = ['auto', 'telegram', 'email', 'both', 'none'];
+/** Languages the website has for the public page and the Apply page (docs/js/i18n.js). English is the base: its texts are the plain settings. */
+const LANGS = ['en', 'uz', 'ru'];
+const LANG_NAMES = { en: 'English', uz: 'Oʻzbekcha', ru: 'Русский' };
 
 /** Every setting: [key, default, what it does]. Stored in the Settings tab; edited in Dashboard → Settings. */
 const SETTINGS = [
@@ -74,15 +80,35 @@ const SETTINGS = [
   ['public_show_team', 'no', 'Public page lists first names + roles (off by default — most of the team are minors)'],
   ['join_form', 'yes', 'Public "Join the team" form'],
   ['join_intro', 'We need help with design, social media, outreach, tech and the event weekend. No experience needed.', 'Text above the join form'],
+  ['languages', 'en', 'Languages of the public page and the Apply page, e.g. "en,uz,ru" — the first one is the default'],
   ['moved_to', '', 'Set when the hub moved to its own server: every request is sent to this address. Clear it to switch this Sheet back on'],
   ['files_repo', '', 'Public GitHub repo with your team files (posters, logos, slides), as owner/repo — shown on the Files page'],
   ['files_branch', 'main', 'Branch of that repo'],
   ['self_claim', 'yes', 'Team members can take unassigned tasks themselves ("Take this task")'],
   ['google_client_id', '', 'Google sign-in: the OAuth Web client ID (…apps.googleusercontent.com). Empty = the shared website\'s client'],
+  ['signin_mode', 'link', 'How people get in: "invite" = a single-use invite, then Google, a password or "this device" (messages never carry a key) · "link" = a personal link that keeps working'],
+  ['invite_days', '7', 'Days an invite works before it expires (1–60)'],
+  ['signup_goal', '', 'Participant signups you aim for (the Signups card and the bot show progress)'],
+  ['funding_per_signup', '', 'HQ funding per signup for your country in USD, e.g. 3.25 — shows an estimate next to the count (empty = hidden)'],
+  ['public_show_signups', 'no', 'Public page shows how many people signed up'],
+  ['feed_signups', 'yes', 'Post new signup counts in the Telegram group'],
+  ['feed_applications', 'yes', 'Post new team applications in the Telegram group (first name + interest only)'],
+  ['feed_files', 'yes', 'Post new files and links in the Telegram group (not the leads-only ones)'],
+  ['inbox_alerts', 'leads', 'New emails from the inbox watcher: "leads" (Telegram to leads), "group" (the organizer group) or "no"'],
 ];
 /** The shared website's Google sign-in client (owned by the Haven Hub maintainers). A hub can use its own: Settings → google_client_id. */
 const SHARED_GOOGLE_CLIENT_ID = '';
-const YESNO = ['weekly_report', 'email_reminders', 'done_alerts', 'group_done_posts', 'change_alerts', 'public_page', 'public_show_progress', 'public_show_team', 'join_form', 'self_claim'];
+// The tagline and the join-form text in every other language: tagline_uz, join_intro_ru, … (empty = the English text)
+LANGS.filter(l => l !== 'en').forEach(l => {
+  SETTINGS.push(['tagline_' + l, '', 'Tagline in ' + LANG_NAMES[l] + ' (empty = the English one)']);
+  SETTINGS.push(['join_intro_' + l, '', 'Text above the join form in ' + LANG_NAMES[l] + ' (empty = the English one)']);
+});
+/** "en,uz,ru" → ['en', 'uz', 'ru'] — known languages only, English when nothing is left. */
+function langsOf_(v) { const out = String(v || '').toLowerCase().split(/[\s,;]+/).filter((l, i, a) => LANGS.indexOf(l) >= 0 && a.indexOf(l) === i); return out.length ? out : ['en']; }
+/** A setting in every language the hub offers: { en: '…', uz: '…' } (only filled ones). */
+function texts_(key) { const S = S_(), o = {}; langsOf_(S.languages).forEach(l => { const v = l === 'en' ? S[key] : S[key + '_' + l]; if (v) o[l] = v; }); if (!o.en && S[key]) o.en = S[key]; return o; }
+const YESNO = ['weekly_report', 'email_reminders', 'done_alerts', 'group_done_posts', 'change_alerts', 'public_page', 'public_show_progress', 'public_show_team', 'join_form', 'self_claim',
+  'public_show_signups', 'feed_signups', 'feed_applications', 'feed_files'];
 const URL_KEYS = ['site_url', 'signup_url', 'instagram', 'telegram_channel', 'website', 'moved_to'];
 
 /** Optional starter checklist added at setup. Days are relative to event_start. Edit or delete freely. */
@@ -228,6 +254,8 @@ function header_(name) {
   MEMO['h:' + name] = h;
   return h;
 }
+/** The tab exists already (reads of optional tabs don't create them). */
+function has_(name) { return !!MEMO['h:' + name] || !!ss_().getSheetByName(name); }
 function rows_(name) {
   if (MEMO['r:' + name]) return MEMO['r:' + name];
   const h = header_(name), sh = sheet_(name), last = sh.getLastRow();
@@ -322,10 +350,17 @@ function dropAccount_(p) { if (SELF_HOSTED && p && typeof HUB_SERVER.dropAccount
 function linkFor_(p) {
   const h = S_().hub_id;
   if (account_(p)) return site_() + '/' + (h ? '?hub=' + h : '') + '#/signin';
+  if (inviteMode_()) return hubUrl_(access_(p) === 'member' ? 'tasks' : 'admin'); // invites: messages carry no key — the person is signed in on their device
   return site_() + '/?' + (h ? 'hub=' + h + '&' : '') + 'u=' + encodeURIComponent(p.key) + '&t=' + p.token;
 }
-function inviteText_(p) {
+/** The message that goes with a personal link — or, with inv ({ url, expires }), with a single-use invite. */
+function inviteText_(p, inv) {
   const link = linkFor_(p), g = S_().greeting || 'Hi', acc = account_(p);
+  if (inv) {
+    const viewer = access_(p) === 'viewer';
+    return `${g}, ${first_(p)}! ${viewer ? `Here is your read-only guest invite to the ${event_()} Team Hub` : `Welcome to the ${event_()} organizing team! Here is your invite to our Team Hub`} — it works once, until ${niceDue_(inv.expires)}:\n${inv.url}\n\n` +
+      `Open it on your phone and choose how you'll sign in${googleClientId_() ? ' (Google is the quickest)' : ''}. After that the hub opens straight to ${viewer ? 'our progress' : 'your tasks'}.\nIt's only for you — please don't forward it.`;
+  }
   if (acc) return `${g}, ${first_(p)}! Sign in to the ${event_()} Team Hub with your username "${acc.username}" and your password:\n${link}\n\nForgot your password? Ask ${contact_()} to reset your sign-in.`;
   if (access_(p) === 'viewer') return `${g}, ${first_(p)}! Here is your read-only guest link to the ${event_()} Team Hub:\n${link}\n\nYou can see our progress and deadlines. Please don't share it.`;
   const gmail = googleClientId_() && (p.google_email || p.email) ? `\n\nOr press "Sign in with Google" on the hub and pick ${p.google_email || p.email}.` : '';
@@ -342,7 +377,7 @@ function keyFor_(name) {
 function personOut_(p) {
   return { key: p.key, name: p.name, role: p.role, area: p.area, handle: p.handle, email: p.email, access: access_(p), notify: p.notify || 'auto',
     active: p.active !== 'no', telegram: !!p.chat_id, hasLink: !!p.token, password: !!account_(p), google: !!p.google_sub, google_email: p.google_email || '',
-    backup: p.backup, works: p.works, weekend: p.weekend, one: p.one, ask: p.ask, joined_at: p.joined_at };
+    backup: p.backup, works: p.works, weekend: p.weekend, one: p.one, ask: p.ask, joined_at: p.joined_at, invite: inviteStatus_(p) };
 }
 
 /** Opening the hub (every "me" load) stamps last_seen — at most every 5 minutes, and only that one cell, so it is safe without the lock. */
@@ -355,7 +390,7 @@ function touchSeen_(p) {
 /** Name → when they were last on the hub: their last visit, or the last thing they did there (whichever is newer). */
 function seenMap_(logAll) {
   const seen = {};
-  (logAll || rows_('Log')).forEach(l => { if (l.who && ['system', 'bot'].indexOf(l.who) < 0 && !(seen[l.who] > l.time)) seen[l.who] = l.time; });
+  (logAll || rows_('Log')).forEach(l => { if (l.who && ['system', 'bot', 'inbox'].indexOf(l.who) < 0 && !(seen[l.who] > l.time)) seen[l.who] = l.time; });
   people_().forEach(p => { if (p.last_seen && !(seen[p.name] > p.last_seen)) seen[p.name] = p.last_seen; });
   return seen;
 }
@@ -697,10 +732,14 @@ function kindOf_(url) {
 function resources_() {
   if (MEMO.res) return MEMO.res;
   const by = (a, b) => (Number(a.order) || 0) - (Number(b.order) || 0) || String(a.section).localeCompare(String(b.section)) || String(a.title).localeCompare(String(b.title));
-  MEMO.res = rows_('Resources').filter(r => r.id && r.title && r.url).sort(by);
+  MEMO.res = rows_('Resources').filter(r => r.id && r.title && (r.url || r.file)).sort(by);
   return MEMO.res;
 }
-function resourceOut_(r) { return { id: r.id, title: r.title, url: r.url, kind: r.kind || kindOf_(r.url), section: r.section || '', private: r.private === 'yes' || r.private === 'leads', leads: r.private === 'leads', thumb: r.thumb || '', note: r.note || '' }; }
+function resourceOut_(r) {
+  const o = { id: r.id, title: r.title, url: r.url, kind: r.kind || kindOf_(r.url), section: r.section || '', private: r.private === 'yes' || r.private === 'leads', leads: r.private === 'leads', thumb: r.thumb || '', note: r.note || '' };
+  if (r.file) Object.assign(o, { url: '', file: true, mime: r.mime || '', size: Number(r.size) || 0, preview: r.preview || '', by: r.added_by || '', added_at: r.added_at || '' }); // an upload: the website asks file.get for it
+  return o;
+}
 /** private: 'no' = everyone with access (guests too), 'yes' = the team (not guests), 'leads' = leads and admins only. */
 function seesRes_(lvl, r) { return r.private === 'leads' ? RANK[lvl] >= 2 : r.private === 'yes' ? lvl !== 'viewer' : true; }
 /** One line of a task's "what you need" → an item: a Files link id, or gh:<path in the team files repo> (a trailing / = a folder). */
@@ -741,7 +780,10 @@ function saveResources_(me, b) {
     const e = [], id = clean_(x.id, 40).toLowerCase(), cur = id ? all.find(r => r.id === id) || add.find(r => r.id === id) : null;
     if (id && !RES_ID_RE.test(id)) e.push('Ids are small letters, digits and dashes: ' + id);
     const r = cur || { id: id || 'r' + n++, added_by: me.key, added_at: now_() };
-    resourceFields_(x, r, e);
+    if (cur && cur.file) { // an upload: only its title, section, note, order and who sees it change
+      const t = clean_(x.title, 120); if (!t) e.push('Give the file a title.');
+      Object.assign(cur, { title: t || cur.title, section: clean_(x.section, 40), note: clean_(x.note, 300), private: x.private === 'leads' || x.leads === true ? 'leads' : yn_(x.private), order: String(parseInt(x.order, 10) || 0) });
+    } else resourceFields_(x, r, e);
     if (e.length) errs.push((list.length > 1 ? `Row ${i + 1}: ` : '') + e[0]);
     else if (!cur) add.push(r);
     else if (upd.indexOf(r) < 0 && add.indexOf(r) < 0) upd.push(r);
@@ -749,16 +791,19 @@ function saveResources_(me, b) {
   if (errs.length) return { ok: false, error: errs[0], errors: errs };
   writeMany_('Resources', upd); appendMany_('Resources', add); MEMO.res = null;
   log_(me.name, '', 'Files', `${add.length} link(s) added, ${upd.length} changed`);
+  if (!b.quiet) feedFiles_(me.name, add);
   return { ok: true, resources: resources_().map(resourceOut_), resource: resourceOut_(add[0] || upd[0]) };
 }
 function deleteResource_(me, b) {
   const r = rows_('Resources').find(x => x.id === String(b.id || ''));
   if (!r) return { ok: false, error: 'No such link.' };
+  if (!isLead_(me) && !(r.file && r.added_by === me.key)) return { ok: false, code: 'forbidden', error: 'Only leads — or whoever uploaded the file — can delete it.' };
   const used = rows_('Tasks').filter(t => String(t.resources || '').split('\n').indexOf(r.id) >= 0);
   if (used.length && !b.force) return { ok: false, code: 'used', tasks: used.map(t => t.id), error: `${used.length} task(s) list this link (${used.slice(0, 5).map(t => t.id).join(', ')}). Delete it anyway to remove it from them too.` };
   if (used.length) { used.forEach(t => { t.resources = String(t.resources).split('\n').filter(x => x !== r.id).join('\n'); }); writeMany_('Tasks', used); }
   deleteRows_('Resources', [r]); MEMO.res = null;
-  log_(me.name, '', 'Files', 'Link deleted: ' + r.title);
+  if (r.file) { try { DriveApp.getFileById(r.file).setTrashed(true); } catch (e) { /* already gone */ } }
+  log_(me.name, '', 'Files', (r.file ? 'File' : 'Link') + ' deleted: ' + r.title);
   return { ok: true, id: r.id, tasks: used.map(t => t.id) };
 }
 function filesOut_() { const S = S_(); return { repo: S.files_repo || '', branch: S.files_branch || 'main', server: SELF_HOSTED }; }
@@ -803,6 +848,164 @@ function relinkTasks_(me, b) {
   writeMany_('Tasks', changed.map(c => c.t));
   logMany_(changed.map(c => [me.name, c.t.id, 'Links moved', 'to Files']));
   return out;
+}
+
+// ================================================================== uploads: files the team adds on the Files page (a private Drive folder / data/files on your own server)
+const UPLOAD_TYPES = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif', 'application/pdf': 'pdf', 'text/plain': 'txt', 'text/csv': 'csv',
+  'application/zip': 'zip', 'video/mp4': 'mp4', 'audio/mpeg': 'mp3', 'font/ttf': 'ttf', 'font/otf': 'otf',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx' };
+function filesFolder_() {
+  const id = prop_('FILES_FOLDER_ID');
+  if (id) { try { return DriveApp.getFolderById(id); } catch (e) { /* recreate below */ } }
+  const f = DriveApp.createFolder(event_() + ' — Team Hub files');
+  setProp_('FILES_FOLDER_ID', f.getId());
+  return f;
+}
+function uploadKind_(mime) {
+  const e = UPLOAD_TYPES[mime] || '';
+  return /^image\//.test(mime) ? 'image' : e === 'pdf' ? 'pdf' : e === 'mp4' ? 'video' : /^(docx|xlsx|pptx)$/.test(e) ? 'office' : e === 'zip' ? 'zip' : /^(txt|csv)$/.test(e) ? 'text' : /^(ttf|otf)$/.test(e) ? 'font' : 'file';
+}
+/** Anyone on the team: { data (base64), mime, fname, title, section, note, private, preview (small data: picture) } → a new tile on the Files page. */
+function uploadFile_(me, b) {
+  const data = String(b.data || ''), mime = String(b.mime || ''), preview = String(b.preview || '');
+  if (!UPLOAD_TYPES[mime]) return { ok: false, error: 'That kind of file can\'t be uploaded — use a picture, PDF, Word, Excel, PowerPoint, ZIP, MP4, MP3, font or text file. Anything else: put it in Drive and add a link.' };
+  if (!/^[A-Za-z0-9+\/=]+$/.test(data) || data.length > 9000000) return { ok: false, error: 'The file is too big (max about 6 MB). Put bigger files in Drive or Canva and add a link instead.' };
+  if (preview && !(PHOTO_DATA_RE.test(preview) && preview.length <= 48000)) return { ok: false, error: 'The preview picture is too big.' };
+  let priv = b.private === 'leads' ? 'leads' : b.private === 'no' ? 'no' : 'yes'; // team only unless the uploader chose otherwise
+  if (priv === 'leads' && !isLead_(me)) priv = 'yes';
+  const title = clean_(b.title, 120) || clean_(b.fname, 120) || 'File';
+  const base = String(b.fname || title).replace(/\.[A-Za-z0-9]+$/, '').replace(/[^\w.\- ]+/g, '').trim().slice(0, 60) || 'file';
+  let f;
+  try { f = filesFolder_().createFile(Utilities.newBlob(Utilities.base64Decode(data), mime, base + '.' + UPLOAD_TYPES[mime])); f.setDescription('library|' + me.key); }
+  catch (err) { botLog_('upload', String(err)); return { ok: false, error: 'Could not save the file: ' + String(err).slice(0, 80) }; }
+  const all = rows_('Resources'), n = all.reduce((m, r) => { const x = String(r.id).match(/^r(\d+)$/); return x ? Math.max(m, Number(x[1])) : m; }, 0) + 1;
+  const r = { id: 'r' + n, title: title, url: '', kind: uploadKind_(mime), section: clean_(b.section, 40) || 'Uploads', private: priv, thumb: '', note: clean_(b.note, 300), order: '0',
+    added_by: me.key, added_at: now_(), file: f.getId(), mime: mime, size: String(Math.floor(data.replace(/=+$/, '').length * 3 / 4)), preview: preview };
+  append_('Resources', r); MEMO.res = null;
+  log_(me.name, '', 'File uploaded', title);
+  feedFiles_(me.name, [r]);
+  return { ok: true, resource: resourceOut_(r), resources: resources_().filter(x => seesRes_(access_(me), x)).map(resourceOut_) };
+}
+/** An uploaded file, for someone allowed to see it (the same rule as its tile on the Files page). */
+function libraryFile_(me, q) {
+  const r = rows_('Resources').find(x => x.id === String(q.id || ''));
+  if (!r || !r.file || !seesRes_(access_(me), r)) return { ok: false, error: 'File not found.' };
+  try { const f = DriveApp.getFileById(r.file), blob = f.getBlob(); return { ok: true, name: f.getName(), mime: blob.getContentType(), data: 'data:' + blob.getContentType() + ';base64,' + Utilities.base64Encode(blob.getBytes()) }; }
+  catch (e) { return { ok: false, error: 'File not found — it may have been deleted.' }; }
+}
+/** "📁 Ann added “Poster v2” to Files" in the organizer group — never for leads-only links. */
+function feedFiles_(who, rs) {
+  if (S_().feed_files === 'no') return;
+  const shown = (rs || []).filter(r => r.private !== 'leads');
+  if (!shown.length) return;
+  const one = shown[0], what = r => r.file ? 'file' : 'link';
+  postGroup_(shown.length === 1 ? `📁 ${who} added the ${what(one)} “${one.title}” to Files${one.section ? ' → ' + one.section : ''}.`
+    : `📁 ${who} added ${shown.length} files and links to Files: ` + shown.slice(0, 6).map(r => '“' + r.title + '”').join(', ') + (shown.length > 6 ? '…' : ''));
+}
+/** Own server: new files in the team files repo (after a pull). */
+function feedRepo_(paths) {
+  if (S_().feed_files === 'no' || !paths || !paths.length) return;
+  postGroup_(`📁 New in the team files: ` + paths.slice(0, 8).map(p => String(p).split('/').pop()).join(', ') + (paths.length > 8 ? ` …and ${paths.length - 8} more` : '') + '. Open Files in the Team Hub.');
+}
+
+// ================================================================== participant signups (the total from HQ's signup page — typed by a lead, sent to the bot, or pushed by a script)
+function signups_() {
+  if (!has_('Signups')) return [];
+  return rows_('Signups').filter(r => isDate_(r.date) && String(r.count) !== '').map(r => ({ date: r.date, count: Number(r.count) || 0, source: r.source || '', note: r.note || '', by: r.by || '' }))
+    .sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+}
+function signupsOut_() {
+  const S = S_(), list = signups_(), last = list[list.length - 1] || null;
+  return { list: list.slice(-120), total: last ? last.count : 0, date: last ? last.date : '', goal: parseInt(S.signup_goal, 10) || 0, rate: Number(S.funding_per_signup) || 0 };
+}
+/** "📈 Signups: 57 (+5 since Mon 5 Oct) · goal 180 (32%) · ≈ $185 from HQ" — '' before the first count. */
+function signupLine_() {
+  const o = signupsOut_();
+  if (!o.date) return '';
+  const prev = o.list.length > 1 ? o.list[o.list.length - 2] : null, d = prev ? o.total - prev.count : 0;
+  return `📈 Signups: ${o.total}` + (prev ? ` (${d >= 0 ? '+' : ''}${d} since ${niceDue_(prev.date)})` : '') + (o.goal ? ` · goal ${o.goal} (${Math.round(100 * o.total / o.goal)}%)` : '') + (o.rate ? ` · ≈ $${Math.round(o.total * o.rate)} from HQ` : '');
+}
+/** Today's total (one row per day — a second count on the same day replaces it). opts: { date, note, source, quiet }. */
+function recordSignups_(who, count, opts) {
+  opts = opts || {};
+  if (!/^\s*\d{1,6}\s*$/.test(String(count == null ? '' : count))) return { ok: false, error: 'The count is a whole number, e.g. 57.' };
+  const n = parseInt(count, 10), today = fmt_(new Date(), 'yyyy-MM-dd'), date = opts.date ? String(opts.date) : today;
+  if (!isDate_(date)) return { ok: false, error: 'The date must be YYYY-MM-DD.' };
+  if (date > today) return { ok: false, error: 'That date is in the future.' };
+  const before = signupsOut_(), row = rows_('Signups').find(r => r.date === date);
+  const o = { date: date, count: String(n), source: clean_(opts.source || 'by hand', 40), note: clean_(opts.note, 200), by: clean_(who, 60), time: now_() };
+  if (row) { Object.assign(row, o); write_('Signups', row); } else append_('Signups', o);
+  log_(clean_(who, 60), '', 'Signups', n + (date !== today ? ' on ' + date : '') + (o.note ? ' — ' + o.note : ''));
+  const post = !opts.quiet && S_().feed_signups !== 'no' && date >= before.date && !(n === before.total && date === before.date);
+  if (post) postGroup_(signupLine_());
+  return { ok: true, signups: signupsOut_(), posted: post };
+}
+function saveSignups_(me, b) { return recordSignups_(me.name, b.count, { date: b.date, note: b.note, source: 'by hand' }); }
+function deleteSignups_(me, b) {
+  const row = rows_('Signups').find(r => r.date === String(b.date || ''));
+  if (!row) return { ok: false, error: 'No count for that day.' };
+  deleteRows_('Signups', [row]);
+  log_(me.name, '', 'Signups removed', row.date + ': ' + row.count);
+  return { ok: true, signups: signupsOut_() };
+}
+
+// ================================================================== the feed key: small scripts that report into the hub (the inbox watcher, a signups counter)
+function feedKey_() { return prop_('FEED_KEY'); }
+function feedOk_(b) { const k = feedKey_(), g = String((b && b.key) || ''); return !!k && g.length === k.length && g === k; }
+/** Where a script sends its reports: this hub's API address. */
+function apiUrl_() { return SELF_HOSTED ? (HUB_SERVER.publicUrl() || site_()) + '/api' : HUB_RE.test(S_().hub_id || '') ? 'https://script.google.com/macros/s/' + S_().hub_id + '/exec' : ''; }
+/** Admins: the feed key (made the first time; renew = a new one, the old one stops working). */
+function feedKeyAction_(me, b) {
+  if (b.renew || !feedKey_()) { setProp_('FEED_KEY', 'fk_' + newToken_() + newToken_()); log_(me.name, '', 'Feed key', b.renew ? 'renewed — update your scripts' : 'made'); }
+  return { ok: true, key: feedKey_(), api: apiUrl_() };
+}
+function pushSignups_(_, b) {
+  if (!feedOk_(b)) return { ok: false, code: 'auth', error: 'Wrong feed key — copy it again from Dashboard → Settings → Connections.' };
+  const src = clean_(b.source, 40) || 'script';
+  return recordSignups_(src, b.count, { source: src, note: b.note });
+}
+
+// ================================================================== inbox: new emails, reported by the inbox watcher (apps-script/inbox-watcher.gs runs in the mailbox's own Google account)
+function inboxOut_(r) { return { id: r.id, time: r.time, from: r.from, subject: r.subject, snippet: r.snippet, link: r.link, status: r.status || 'new', handled_by: r.handled_by || '', task: r.task || '', mailbox: r.mailbox || '' }; }
+function inbox_() { if (!has_('Inbox')) return []; return rows_('Inbox').filter(r => r.id).slice().sort((a, b) => a.time < b.time ? 1 : a.time > b.time ? -1 : 0); }
+function timeIn_(v) { const s = String(v || ''); if (/^\d{4}-\d\d-\d\d \d\d:\d\d$/.test(s)) return s; const d = new Date(s); return isNaN(d.getTime()) ? now_() : fmt_(d); }
+function fromName_(f) { const m = String(f || '').match(/^\s*"?([^"<]+?)"?\s*<[^>]+>\s*$/); return m ? m[1] : String(f || ''); }
+/** The watcher: { key, mailbox, items: [{ id, time, from, subject, snippet, link }] } — an email it already sent is skipped. */
+function pushInbox_(_, b) {
+  if (!feedOk_(b)) return { ok: false, code: 'auth', error: 'Wrong feed key — copy it again from Dashboard → Settings → Connections.' };
+  const items = Array.isArray(b.items) ? b.items.slice(0, 50) : [], have = {}, add = [], box = clean_(b.mailbox, 120);
+  rows_('Inbox').forEach(r => { have[r.id] = 1; });
+  items.forEach(x => {
+    x = x || {};
+    const id = clean_(x.id, 120), link = clean_(x.link, 500);
+    if (!id || have[id]) return;
+    have[id] = 1;
+    add.push({ id: id, time: timeIn_(x.time), from: clean_(x.from, 200), subject: clean_(x.subject, 300) || '(no subject)', snippet: clean_(x.snippet, 600),
+      link: /^https:\/\/mail\.google\.com\//.test(link) ? link : '', status: 'new', handled_by: '', task: '', mailbox: box, got_at: now_() });
+  });
+  if (!add.length) return { ok: true, added: 0 };
+  appendMany_('Inbox', add);
+  const all = rows_('Inbox');
+  if (all.length > 600) replaceAll_('Inbox', all.slice().sort((p, q) => p.time < q.time ? -1 : 1).slice(-500)); // the newest 500 are enough
+  log_('inbox', '', 'New email', add.length === 1 ? fromName_(add[0].from) + ': ' + add[0].subject : add.length + ' emails');
+  const mode = S_().inbox_alerts || 'leads';
+  if (mode !== 'no') {
+    const text = `📬 ${add.length === 1 ? 'New email' : add.length + ' new emails'}${box ? ' to ' + box : ''}\n` + add.slice(0, 8).map(x => `• ${x.from ? fromName_(x.from) + ': ' : ''}${x.subject}`).join('\n') +
+      (add.length > 8 ? `\n…and ${add.length - 8} more` : '') + `\n\nTeam Hub → Inbox`;
+    if (mode === 'group') postGroup_(text); else notifyLeads_({ text: text });
+  }
+  return { ok: true, added: add.length };
+}
+/** Leads: an email is handled (or ignored, or back to new); task = the task made from it. */
+function updateInbox_(me, b) {
+  const r = rows_('Inbox').find(x => x.id === String(b.id || ''));
+  if (!r) return { ok: false, error: 'No such email.' };
+  if (b.status !== undefined) { if (['new', 'done', 'ignored'].indexOf(b.status) < 0) return { ok: false, error: 'Bad status.' }; r.status = b.status; r.handled_by = b.status === 'new' ? '' : me.name; }
+  if (b.task !== undefined) { const t = String(b.task || ''); if (t && !rows_('Tasks').some(x => x.id === t)) return { ok: false, error: 'No such task.' }; r.task = t; }
+  write_('Inbox', r);
+  log_(me.name, r.task || '', 'Email ' + (r.status === 'done' ? 'handled' : r.status), r.subject);
+  return { ok: true, email: inboxOut_(r) };
 }
 
 // ================================================================== task-change alerts (added / removed / moved / new date)
@@ -1077,10 +1280,11 @@ function addPerson_(me, b) {
   append_('People', p);
   log_(me.name, '', 'Person added', `${p.name} (${p.access})`);
   let emailed = false;
-  if (x.invite && p.email) emailed = mailInvite_(p);
+  const inv = inviteMode_() ? newInvite_(p, me.name) : null;
+  if (x.invite && p.email) emailed = mailInvite_(p, false, inv);
   if (app) { app.status = 'accepted'; app.handled_by = me.name; app.person = p.key; write_('Applications', app); }
   refreshLinks();
-  return { ok: true, person: personOut_(p), link: linkFor_(p), message: inviteText_(p), emailed: emailed };
+  return linkOut_(p, inv, { person: personOut_(p), emailed: emailed });
 }
 function editPerson_(me, b) {
   const x = b.person || {}, p = findPerson_(x.key);
@@ -1126,8 +1330,14 @@ function reactivatePerson_(me, b) {
   const p = findPerson_(b.key);
   if (!p) return { ok: false, error: 'No such person.' };
   p.active = 'yes'; p.token = newToken_(); write_('People', p);
-  log_(me.name, '', 'Person re-added', p.name); refreshLinks();
-  return { ok: true, person: personOut_(p), link: linkFor_(p), message: inviteText_(p) };
+  log_(me.name, '', 'Person re-added', p.name);
+  const inv = inviteMode_() ? newInvite_(p, me.name) : null;
+  refreshLinks();
+  return linkOut_(p, inv, { person: personOut_(p) });
+}
+/** What People shows after adding someone or making a new link: the invite (single-use) or the personal link, and the message to send. */
+function linkOut_(p, inv, extra) {
+  return Object.assign({ ok: true, link: inv ? inv.url : linkFor_(p), message: inviteText_(p, inv), invite: !!inv, expires: inv ? inv.expires : '' }, extra || {});
 }
 /** A link leaked, or someone forgot their password: new token (old link stops working), the password is removed and Telegram is unlinked. */
 function resetLink_(me, b) {
@@ -1136,15 +1346,20 @@ function resetLink_(me, b) {
   const had = !!account_(p) || !!p.google_sub;
   dropAccount_(p);
   p.token = newToken_(); p.chat_id = ''; p.google_sub = ''; p.google_email = ''; write_('People', p);
-  log_(me.name, '', had ? 'Sign-in reset' : 'Link reset', p.name); refreshLinks();
-  return { ok: true, person: personOut_(p), link: linkFor_(p), message: inviteText_(p) };
+  log_(me.name, '', had ? 'Sign-in reset' : 'Link reset', p.name);
+  const inv = inviteMode_() ? newInvite_(p, me.name) : null;
+  refreshLinks();
+  return linkOut_(p, inv, { person: personOut_(p) });
 }
+/** "Get link": the personal link — or, with invites, a NEW single-use invite (the older open one stops working). */
 function personLink_(me, b) {
   const p = findPerson_(b.key);
   if (!p || p.active === 'no') return { ok: false, error: 'No such person.' };
+  if (!p.token) { p.token = newToken_(); write_('People', p); }
+  if (inviteMode_()) { const inv = newInvite_(p, me.name); log_(me.name, '', 'Invite made', p.name); refreshLinks(); return linkOut_(p, inv); }
   if (account_(p)) return { ok: false, code: 'password', error: `${first_(p)} signs in with a password, so there is no link to copy. Forgot it? Use "Reset sign-in" to give them a new link.` };
-  if (!p.token) { p.token = newToken_(); write_('People', p); refreshLinks(); }
-  return { ok: true, link: linkFor_(p), message: inviteText_(p) };
+  refreshLinks();
+  return linkOut_(p, null);
 }
 /** Own server: someone just made a password → a new secret, so every old link stops working. Telegram stays connected. */
 function rotateToken_(key, why) {
@@ -1160,7 +1375,7 @@ function invitePerson_(me, b) {
   if (!p || p.active === 'no') return { ok: false, error: 'No such person.' };
   if (!p.email) return { ok: false, error: 'Add their email first (Edit).' };
   if (!p.token) { p.token = newToken_(); write_('People', p); }
-  const ok = mailInvite_(p);
+  const ok = mailInvite_(p, false, inviteMode_() ? newInvite_(p, me.name) : null);
   if (ok) log_(me.name, '', 'Invite emailed', p.name);
   return ok ? { ok: true } : { ok: false, error: 'Could not send the email (daily limit reached?). Copy the link instead.' };
 }
@@ -1183,7 +1398,9 @@ function refreshLinks() {
   sh.getRange(1, 1, 1, TABS.Links.length).setValues([TABS.Links]).setFontWeight('bold').setBackground('#783D2B').setFontColor('#ffffff');
   const last = sh.getLastRow();
   if (last > 1) sh.getRange(2, 1, last - 1, Math.max(sh.getLastColumn(), TABS.Links.length)).clearContent();
-  const rows = activePeople_().filter(p => p.token).map(p => [p.name, access_(p), linkFor_(p), p.chat_id ? 'yes' : 'no', inviteText_(p)]);
+  const inv = inviteMode_();
+  const rows = activePeople_().filter(p => p.token).map(p => { const o = inv ? openInvite_(p) : null;
+    return [p.name, access_(p), inv ? (o ? o.url : '(no open invite — People → Get invite)') : linkFor_(p), p.chat_id ? 'yes' : 'no', inv ? (o ? inviteText_(p, o) : '') : inviteText_(p)]; });
   if (rows.length) { const rg = sh.getRange(2, 1, rows.length, TABS.Links.length); rg.setNumberFormat('@'); rg.setValues(rows); }
   delete MEMO['r:Links'];
 }
@@ -1197,6 +1414,88 @@ function addMissingTokens() {
 }
 function resetToken(key) { resetMemo_(); const r = resetLink_({ name: 'system' }, { key: key }); if (!r.ok) throw new Error(r.error); return r.link; }
 
+// ================================================================== single-use invites (setting signin_mode = "invite")
+// An invite is a link that works ONCE: the person opens it, picks how they sign in from now on (Google, a password on your own
+// server, or "just this device"), and the link is used up. Messages after that never carry a key — a forwarded or leaked
+// message lets nobody in. A newer invite for the same person switches the older one off.
+function inviteMode_() { return S_().signin_mode === 'invite'; }
+const INVITE_RE = /^[0-9a-f]{40}$/;
+function inviteUrl_(code) { const h = S_().hub_id; return site_() + '/' + (h ? '?hub=' + h : '') + '#/invite?k=' + code; }
+/** A new invite for p; hours = how long it works (default: the invite_days setting). */
+function newInvite_(p, by, hours) {
+  const now = now_(), old = rows_('Invites').filter(x => x.key === p.key && !x.used_at);
+  old.forEach(x => { x.used_at = now; x.used_how = 'replaced'; });
+  writeMany_('Invites', old);
+  const days = Math.min(60, Math.max(1, parseInt(S_().invite_days, 10) || 7));
+  const code = (newToken_() + newToken_()).slice(0, 40), exp = fmt_(new Date(Date.now() + (hours ? hours * 3600e3 : days * 864e5)));
+  append_('Invites', { code: code, key: p.key, created_at: now, expires_at: exp, used_at: '', used_how: '', by: clean_(by, 60) });
+  return { code: code, url: inviteUrl_(code), expires: exp };
+}
+/** The newest invite of p that still works → { url, expires } or null. */
+function openInvite_(p) {
+  const now = now_(), x = rows_('Invites').filter(i => i.key === p.key && !i.used_at && i.expires_at >= now).pop();
+  return x ? { code: x.code, url: inviteUrl_(x.code), expires: x.expires_at } : null;
+}
+/** People page: '' (never invited) · 'open' (sent, not used yet) · 'used' (they are in) · 'expired'. */
+function inviteStatus_(p) {
+  if (!has_('Invites')) return '';
+  const mine = rows_('Invites').filter(i => i.key === p.key && i.used_how !== 'replaced');
+  if (!mine.length) return '';
+  const last = mine[mine.length - 1];
+  return last.used_at ? 'used' : last.expires_at >= now_() ? 'open' : 'expired';
+}
+function inviteFind_(code) {
+  code = String(code || '').trim().toLowerCase();
+  if (!INVITE_RE.test(code)) return { code: 'bad', error: 'This invite link is incomplete — copy the whole link from the message.' };
+  const iv = rows_('Invites').find(x => x.code === code), who = contact_();
+  if (!iv) return { code: 'bad', error: `This invite does not work. Ask ${who} for a new one.` };
+  if (iv.used_how === 'replaced') return { code: 'replaced', error: `A newer invite replaced this one — open the newest message, or ask ${who} for a new invite.` };
+  if (iv.used_at) return { code: 'used', error: `This invite was used already. Sign in the way you chose then — or ask ${who} for a new invite.` };
+  if (iv.expires_at < now_()) return { code: 'expired', error: `This invite has expired. Ask ${who} for a new one.` };
+  const p = findPerson_(iv.key);
+  if (!p || p.active === 'no') return { code: 'bad', error: 'This invite does not work any more.' };
+  return { iv: iv, p: p };
+}
+/** Public: who the invite is for, and which ways to sign in this hub offers. Nothing is used up yet. */
+function inviteCheck_(_, b) {
+  const f = inviteFind_(b.k);
+  if (f.error) return { ok: false, code: f.code, error: f.error };
+  return { ok: true, name: f.p.name, first: first_(f.p), event: event_(), access: access_(f.p), expires: f.iv.expires_at,
+    google: googleClientId_(), password: SELF_HOSTED && typeof HUB_SERVER.account === 'function' && !account_(f.p), hasPassword: !!account_(f.p) };
+}
+/** Apps Script hubs: use the invite → this person's key for this browser. how = 'device' | 'google' (+ idToken, nonce). Own server: server/app.mjs answers. */
+function inviteClaim_(_, b) {
+  const how = String(b.how || 'device');
+  if (how === 'password') return { ok: false, error: 'Passwords need a hub on its own server — choose Google or "Just this device".' };
+  let claims = null;
+  if (how === 'google') { const v = verifyGoogle_(b); if (v.error) return { ok: false, error: v.error }; claims = v.claims; }
+  const r = inviteUse_(b.k, how === 'google' ? 'google' : 'device', claims);
+  return r.ok ? { ok: true, u: r.key, t: r.token, name: r.name } : r;
+}
+/** Both setups, once the way to sign in was checked: the invite is used up (and Google connected) → { ok, key, token, name }. */
+function inviteUse_(code, how, claims) {
+  const f = inviteFind_(code);
+  if (f.error) return { ok: false, code: f.code, error: f.error };
+  const p = f.p;
+  if (claims) {
+    if (!claims.sub) return { ok: false, error: 'Google sign-in failed — press the button again.' };
+    if (people_().some(q => q.key !== p.key && q.google_sub === String(claims.sub))) return { ok: false, error: 'That Google account is already connected to someone else on the team. Pick another account.' };
+    bindGoogle_(p, claims);
+  }
+  if (!p.token) { p.token = newToken_(); write_('People', p); }
+  f.iv.used_at = now_(); f.iv.used_how = how; write_('Invites', f.iv);
+  log_(p.name, '', 'Joined with the invite', how === 'google' ? 'Google' + (p.google_email ? ' ' + p.google_email : '') : how === 'password' ? 'password' : 'this device');
+  refreshLinks();
+  return { ok: true, key: p.key, token: p.token, name: p.name };
+}
+/** Admins who lost their way in: Sheet menu "Show admin links" / hubctl admin-links. With invites, each gets a fresh one (24 hours). */
+function adminLinks_() {
+  return activePeople_().filter(isAdmin_).map(p => {
+    if (!p.token) { p.token = newToken_(); write_('People', p); }
+    return { name: p.name, link: inviteMode_() ? newInvite_(p, 'admin links', 24).url : linkFor_(p) };
+  });
+}
+
 // ================================================================== applications (public "Join the team" form)
 function apply_(_, b) {
   const S = S_();
@@ -1206,6 +1505,8 @@ function apply_(_, b) {
   if (b.ticket && !g) return { ok: false, error: 'Your Google sign-in timed out — press "Sign up with Google" again, or fill in the form without it.' };
   const email = g && g.email ? g.email : (isEmail_(clean_(b.email, 120).toLowerCase()) ? clean_(b.email, 120).toLowerCase() : '');
   const name = clean_(b.name, 60) || (g ? g.name : ''), contact = clean_(b.contact, 80) || email, age = String(b.age_group || '');
+  const lang = LANGS.indexOf(String(b.lang || '')) >= 0 ? String(b.lang) : 'en';
+  const list = v => (Array.isArray(v) ? v : String(v || '').split(/\s*[,\n]\s*/)).map(x => clean_(x, 60)).filter(Boolean).slice(0, 10).join(', ');
   if (name.length < 2) return { ok: false, error: 'Write your name.' };
   if (contact.length < 3) return { ok: false, error: 'Write your Telegram username or email so we can reach you.' };
   if (['13-18', '19+'].indexOf(age) < 0) return { ok: false, error: 'Choose your age group.' };
@@ -1214,13 +1515,16 @@ function apply_(_, b) {
   if (cache.get(ck)) return { ok: true, message: 'We already have your application. An organizer will message you.' };
   cache.put('apply_n', String(n + 1), 3600); cache.put(ck, '1', 600);
   const all = rows_('Applications'), id = 'A' + ('00' + (all.reduce((m, a) => Math.max(m, parseInt(String(a.id).slice(1), 10) || 0), 0) + 1)).slice(-3);
-  const a = { id: id, time: now_(), name: name, contact: contact, age_group: age, interest: clean_(b.interest, 200), note: clean_(b.note, 1000), status: 'new', handled_by: '',
-    email: email, verified: g && g.email ? 'yes' : 'no', sub: g ? String(g.sub || '') : '', person: '' };
+  const a = { id: id, time: now_(), name: name, contact: contact, age_group: age, interest: clean_(list(b.interests || b.interest), 300), note: clean_(b.note, 1000), status: 'new', handled_by: '',
+    email: email, verified: g && g.email ? 'yes' : 'no', sub: g ? String(g.sub || '') : '', person: '', lang: lang, school: clean_(b.school, 100), availability: clean_(list(b.availability), 200) };
   append_('Applications', a);
   const m = appMatch_(a, people_());
-  const msg = `📝 New team application — ${a.name} (${age})\nContact: ${a.contact}${a.verified === 'yes' ? ' (Google-verified)' : ''}\nWants to help with: ${a.interest || '—'}${a.note ? '\n' + a.note : ''}` +
+  const msg = `📝 New team application — ${a.name} (${age})\nContact: ${a.contact}${a.verified === 'yes' ? ' (Google-verified)' : ''}\nWants to help with: ${a.interest || '—'}` +
+    (a.school ? `\nSchool: ${a.school}` : '') + (a.availability ? `\nFree: ${a.availability}` : '') + (lang !== 'en' ? `\nWrote in: ${LANG_NAMES[lang]}` : '') + (a.note ? '\n' + a.note : '') +
     (m ? `\n\n⚠️ ${m.maybe ? 'Maybe' : 'Already'} on the team: ${m.p.name}${m.p.role ? ' (' + m.p.role + ')' : ''}${m.p.active === 'no' ? ' — removed earlier' : ''}` : '') + '\n\nDashboard → Applications';
   activePeople_().filter(isAdmin_).forEach(p => notify_(p, { text: msg, subject: `New team application: ${a.name}`, button: ['Open applications', hubUrl_('admin/applications')] }));
+  if (S.feed_applications !== 'no') postGroup_(`📝 Someone new wants to join: ${String(a.name).split(' ')[0]} (${age})${a.interest ? ' — ' + a.interest : ''}. Admins: Dashboard → Applications.`);
+  log_('system', '', 'Application', String(a.name).split(' ')[0] + (a.interest ? ' — ' + a.interest : ''));
   return { ok: true, message: 'Thanks! An organizer will message you soon.' };
 }
 /** b.person = the person this application belongs to ("already on the team"). */
@@ -1256,7 +1560,7 @@ function appMatch_(a, ppl) {
 function appOut_(a, ppl) {
   const m = ppl ? appMatch_(a, ppl) : null;
   return { id: a.id, time: a.time, name: a.name, contact: a.contact, age_group: a.age_group, interest: a.interest, note: a.note, status: a.status || 'new', handled_by: a.handled_by,
-    email: a.email || '', verified: a.verified === 'yes', person: a.person || '',
+    email: a.email || '', verified: a.verified === 'yes', person: a.person || '', lang: a.lang || 'en', school: a.school || '', availability: a.availability || '',
     match: m ? { key: m.p.key, name: m.p.name, role: m.p.role, area: m.p.area, active: m.p.active !== 'no', how: m.how, maybe: m.maybe } : null };
 }
 
@@ -1268,7 +1572,7 @@ function requestLink_(_, b) {
   if (n >= 40 || cache.get('rl_' + email)) return msg;
   cache.put('rl_n', String(n + 1), 3600); cache.put('rl_' + email, '1', 600);
   const p = activePeople_().find(q => q.email === email && q.token);
-  if (p) { mailInvite_(p, true); log_(p.name, '', 'Link emailed', ''); }
+  if (p) { mailInvite_(p, true, inviteMode_() ? newInvite_(p, 'email request', 24) : null); log_(p.name, '', 'Link emailed', ''); }
   return msg;
 }
 
@@ -1277,7 +1581,8 @@ function saveSettings_(me, b) {
   const v = b.values || {}, errs = [], out = {}, known = SETTINGS.map(d => d[0]);
   Object.keys(v).forEach(k => {
     if (known.indexOf(k) < 0) return;
-    let val = YESNO.indexOf(k) >= 0 ? yn_(v[k]) : clean_(v[k], k === 'join_intro' || k === 'tagline' ? 500 : 200);
+    let val = YESNO.indexOf(k) >= 0 ? yn_(v[k]) : clean_(v[k], /^(join_intro|tagline)/.test(k) ? 500 : 200);
+    if (k === 'languages') { const want = String(val || '').toLowerCase().split(/[\s,;]+/).filter(Boolean), bad = want.filter(l => LANGS.indexOf(l) < 0); if (bad.length) errs.push(`Unknown language: ${bad.join(', ')} — the website knows ${LANGS.join(', ')}.`); val = langsOf_(val).join(','); }
     if (k === 'event_name' && !val) errs.push('The event name is required.');
     if (k === 'timezone' && val && !isTz_(val)) errs.push('Time zone must be an IANA name like Europe/Berlin.');
     if ((k === 'event_start' || k === 'event_end') && val && !isDate_(val)) errs.push('Event dates must be YYYY-MM-DD.');
@@ -1289,6 +1594,11 @@ function saveSettings_(me, b) {
     if (k === 'files_branch') { val = val || 'main'; if (!/^[\w.\/-]{1,60}$/.test(val)) errs.push('Branch name looks wrong.'); }
     if (k === 'google_client_id' && val && !/^[\w-]+\.apps\.googleusercontent\.com$/.test(val)) errs.push('The Google client ID ends with .apps.googleusercontent.com — copy it from Google Cloud → Credentials.');
     if (k === 'site_url') val = val.replace(/\/+$/, '');
+    if (k === 'signin_mode' && ['link', 'invite'].indexOf(val) < 0) errs.push('Sign-in must be "invite" or "link".');
+    if (k === 'invite_days') { const d = parseInt(val, 10); if (!(d >= 1 && d <= 60)) errs.push('Invites can last 1–60 days.'); else val = String(d); }
+    if (k === 'signup_goal' && val) { const n = parseInt(val, 10); if (!(n >= 1 && n <= 100000)) errs.push('The signup goal is a number, e.g. 180.'); else val = String(n); }
+    if (k === 'funding_per_signup' && val) { const f = Number(String(val).replace(',', '.').replace(/^\$/, '')); if (!(f > 0 && f < 1000)) errs.push('Funding per signup is an amount in USD, e.g. 3.25.'); else val = String(Math.round(f * 100) / 100); }
+    if (k === 'inbox_alerts' && ['leads', 'group', 'no'].indexOf(val) < 0) errs.push('Inbox alerts: leads, group or no.');
     out[k] = val;
   });
   const start = out.event_start || S_().event_start, end = out.event_end || S_().event_end;
@@ -1424,6 +1734,8 @@ const ACTIONS = {
   setup: { level: 'public', post: true, lock: true, fn: apiSetup_ },
   apply: { level: 'public', post: true, lock: true, fn: apply_ },
   requestLink: { level: 'public', post: true, lock: true, fn: requestLink_ },
+  'invite.check': { level: 'public', post: true, fn: inviteCheck_ },
+  'invite.claim': { level: 'public', post: true, lock: true, fn: inviteClaim_ },
   'auth.google': { level: 'public', post: true, lock: true, fn: authGoogle_ },
   me: { level: 'any', fn: apiMe_ },
   tgdisconnect: { level: 'any', post: true, lock: true, fn: tgDisconnect_ },
@@ -1445,8 +1757,16 @@ const ACTIONS = {
   'task.delete': { level: 'admin', post: true, lock: true, fn: deleteTasks_ },
   'task.relink': { level: 'admin', post: true, lock: true, fn: relinkTasks_ },
   'files.list': { level: 'any', fn: filesList_ },
+  'file.get': { level: 'any', fn: libraryFile_ },
+  'file.upload': { level: 'member', post: true, lock: true, fn: uploadFile_ },
+  'signups.save': { level: 'lead', post: true, lock: true, fn: saveSignups_ },
+  'signups.delete': { level: 'admin', post: true, lock: true, fn: deleteSignups_ },
+  'signups.push': { level: 'public', post: true, lock: true, fn: pushSignups_ },
+  'inbox.push': { level: 'public', post: true, lock: true, fn: pushInbox_ },
+  'inbox.update': { level: 'lead', post: true, lock: true, fn: updateInbox_ },
+  'feed.key': { level: 'admin', post: true, lock: true, fn: feedKeyAction_ },
   'resource.save': { level: 'lead', post: true, lock: true, fn: saveResources_ },
-  'resource.delete': { level: 'lead', post: true, lock: true, fn: deleteResource_ },
+  'resource.delete': { level: 'member', post: true, lock: true, fn: deleteResource_ },
   'person.add': { level: 'admin', post: true, lock: true, fn: addPerson_ },
   'person.edit': { level: 'admin', post: true, lock: true, fn: editPerson_ },
   'person.deactivate': { level: 'admin', post: true, lock: true, fn: deactivatePerson_ },
@@ -1520,7 +1840,8 @@ function personActivity_(me, q) {
 }
 function apiPublic_() {
   if (!hasAdmin_()) return { ok: false, code: 'not_ready', error: 'This hub is not set up yet.' };
-  const S = S_(), ev = eventOut_(), base = { ok: true, version: HUB_VERSION, tz: tz_(), event: { name: ev.name, city: ev.city, start: ev.start, end: ev.end, tagline: ev.tagline } }; // no names on the public page
+  const S = S_(), ev = eventOut_(), langs = langsOf_(S.languages);
+  const base = { ok: true, version: HUB_VERSION, tz: tz_(), langs: langs, event: { name: ev.name, city: ev.city, start: ev.start, end: ev.end, tagline: ev.tagline, taglines: texts_('tagline') } }; // no names on the public page
   if (S.public_page !== 'yes') return Object.assign(base, { enabled: false });
   const tasks = rows_('Tasks').filter(t => t.status !== 'Dropped'), done = tasks.filter(t => t.status === 'Done').length;
   return Object.assign(base, {
@@ -1528,9 +1849,10 @@ function apiPublic_() {
     links: { signup: S.signup_url, email: S.city_email, instagram: S.instagram, telegram: S.telegram_channel, website: S.website },
     progress: S.public_show_progress === 'yes' ? { done: done, total: tasks.length, milestones: milestones_().filter(m => m.public).map(m => ({ date: m.date, label: m.label, done: m.done })) } : null,
     team: S.public_show_team === 'yes' ? team_().map(p => ({ name: first_(p), role: p.role, area: p.area })) : null,
-    join: S.join_form === 'yes' ? { intro: S.join_intro } : null,
+    join: S.join_form === 'yes' ? { intro: S.join_intro, intros: texts_('join_intro'), channel: S.telegram_channel || '' } : null,
     sponsors: sponsors_(false),
     google: googleClientId_(),
+    signups: S.public_show_signups === 'yes' && signups_().length ? (o => ({ total: o.total, goal: o.goal, date: o.date }))(signupsOut_()) : null,
   });
 }
 function apiMe_(me, q) {
@@ -1557,7 +1879,9 @@ function apiMe_(me, q) {
     publicLink: publicLink_(),
     features: FEATURES,
     files: filesOut_(), resources: resources_().filter(r => seesRes_(lvl, r)).map(resourceOut_),
+    signups: signupsOut_(), signin: S.signin_mode === 'invite' ? 'invite' : 'link', langs: langsOf_(S.languages),
   };
+  if (lead) { const ib = inbox_(); out.inbox = ib.slice(0, 200).map(inboxOut_); out.inboxNew = ib.filter(r => (r.status || 'new') === 'new').length; }
   if (!lead) out.tasks.concat(out.open).forEach(t => { t.resources = t.resources.filter(r => !r.leads); }); // links only leads may see stay out of members' tasks
   if (seeAll) {
     out.all = all.map(taskOut_);
@@ -1578,13 +1902,16 @@ function apiMe_(me, q) {
     out.sponsors = sponsors_(true);
     out.sponsorTiers = SPONSOR_TIERS;
     out.hosting = SELF_HOSTED ? 'server' : 'google';
+    out.feed = { key: !!feedKey_(), api: apiUrl_() };
+    out.allLangs = LANGS.map(l => ({ code: l, name: LANG_NAMES[l] }));
     out.sheetUrl = SELF_HOSTED ? '' : ss_().getUrl();
   }
   return out;
 }
 function apiExport_() {
   const data = {};
-  ['Settings', 'People', 'Tasks', 'Log', 'Meetings', 'Rules', 'Milestones', 'Applications', 'Sponsors', 'Resources'].forEach(n => {
+  ['Settings', 'People', 'Tasks', 'Log', 'Meetings', 'Rules', 'Milestones', 'Applications', 'Sponsors', 'Resources', 'Signups', 'Inbox'].forEach(n => { // never Invites (live sign-in codes)
+    if (['Signups', 'Inbox'].indexOf(n) >= 0 && !has_(n)) { data[n] = []; return; }
     data[n] = rows_(n).map(r => { const o = {}; Object.keys(r).forEach(k => { if (k[0] !== '_' && ['token', 'chat_id', 'google_sub', 'sub'].indexOf(k) < 0) o[k] = r[k]; }); return o; });
   });
   return { ok: true, version: HUB_VERSION, exported: now_(), data: data };
@@ -1612,6 +1939,7 @@ function apiSetup_(_, b) {
     event_name: clean_(ev.name, 80), city: clean_(ev.city, 60), event_start: clean_(ev.start, 10) || SETTINGS[2][1], event_end: clean_(ev.end, 10) || SETTINGS[3][1],
     timezone: clean_(ev.timezone, 60) || Session.getScriptTimeZone(), public_page: yn_(b.publicPage !== false), join_form: yn_(b.joinForm !== false),
     signup_url: clean_(ev.signup, 200), hub_id: !SELF_HOSTED && HUB_RE.test(String(b.hub || '')) ? String(b.hub) : '', site_url: isUrl_(clean_(b.site, 200)) ? clean_(b.site, 200).replace(/\/+$/, '') : DEFAULT_SITE,
+    signin_mode: b.invites === false ? 'link' : 'invite', languages: langsOf_(b.languages).join(','), // new hubs: single-use invites
   };
   if (!vals.event_name) errs.push('Write the event name.');
   if (!isDate_(vals.event_start) || !isDate_(vals.event_end) || vals.event_end < vals.event_start) errs.push('Check the event dates.');
@@ -1641,8 +1969,9 @@ function apiSetup_(_, b) {
   refreshLinks();
   log_('system', '', 'Hub set up', `${vals.event_name} · admin ${admin.name}`);
   const d = ss_().getSheetByName('Sheet1'); if (d && d.getLastRow() === 0) { try { ss_().deleteSheet(d); } catch (e) { /* last sheet */ } }
-  const emailed = email ? mailInvite_(admin) : false;
-  return { ok: true, key: admin.key, token: admin.token, link: linkFor_(admin), emailed: emailed, warning: warn };
+  const inv = inviteMode_() && email ? newInvite_(admin, 'setup') : null; // with invites: a way in from the admin's other devices
+  const emailed = email ? mailInvite_(admin, false, inv) : false;
+  return { ok: true, key: admin.key, token: admin.token, link: linkFor_(admin), invites: inviteMode_(), emailed: emailed, warning: warn };
 }
 /** Runs by itself the first time a v3 Sheet (People tab, no Settings tab) gets a request. Safe to run again by hand. */
 function upgrade() {
@@ -1674,6 +2003,7 @@ function applyValidation_() {
     set('Tasks', 'status', STATUSES); set('Tasks', 'review', ['', 'approved', 'redo']);
     set('Milestones', 'kind', ['gate', 'deadline', 'event']); set('Milestones', 'public', ['yes', 'no']); set('Milestones', 'done', ['yes', 'no']);
     set('Applications', 'status', ['new', 'accepted', 'declined']);
+    if (has_('Inbox')) set('Inbox', 'status', ['new', 'done', 'ignored']);
   } catch (e) { /* cosmetic only */ }
 }
 
@@ -1697,7 +2027,7 @@ function menuAdminLinks() {
   const ui = SpreadsheetApp.getUi();
   if (!hasAdmin_()) { ui.alert('Not set up yet', `1. Extensions → Apps Script → Deploy → New deployment → Web app (Execute as: Me, Who has access: Anyone).\n2. Open ${DEFAULT_SITE}/#/setup and paste the Web app URL.`, ui.ButtonSet.OK); return; }
   const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-  const html = activePeople_().filter(isAdmin_).map(p => `<p><b>${esc(p.name)}</b><br><a href="${esc(linkFor_(p))}" target="_blank">${esc(linkFor_(p))}</a></p>`).join('') +
+  const html = adminLinks_().map(x => `<p><b>${esc(x.name)}</b><br><a href="${esc(x.link)}" target="_blank">${esc(x.link)}</a></p>`).join('') + (inviteMode_() ? '<p style="color:#777">Each is a new single-use invite (24 hours).</p>' : '') +
     `<p style="color:#777">Public page: <a href="${esc(publicLink_())}" target="_blank">${esc(publicLink_())}</a></p>` +
     (S_().hub_id ? '' : '<p style="color:#b00">The hub ID is not known yet — open the website once from the setup wizard, or fill hub_id in the Settings tab.</p>');
   ui.showModalDialog(HtmlService.createHtmlOutput(`<div style="font-family:Arial;font-size:13px;word-break:break-all">${html}</div>`).setWidth(520).setHeight(320), 'Admin links (keep them private)');
@@ -1796,7 +2126,12 @@ function mail_(to, subject, text, button) {
     return true;
   } catch (err) { botLog_('mail', String(err)); return false; }
 }
-function mailInvite_(p, recovery) {
+function mailInvite_(p, recovery, inv) {
+  if (inv) {
+    const subj = recovery ? 'Your sign-in link for the Team Hub' : access_(p) === 'viewer' ? 'Your guest invite to our Team Hub' : 'Welcome to the team — your Team Hub invite';
+    const text = recovery ? `${S_().greeting || 'Hi'}, ${first_(p)}! Here is a new sign-in link for the ${event_()} Team Hub. It works once, for 24 hours:\n${inv.url}\n\nDidn't ask for it? Ignore this email — nothing changes.` : inviteText_(p, inv);
+    return mail_(p.email, subj, text, [recovery ? 'Sign in' : 'Open my invite', inv.url]);
+  }
   const link = linkFor_(p), acc = account_(p);
   const text = recovery && !acc ? `${S_().greeting || 'Hi'}, ${first_(p)}! Here is your personal ${event_()} Team Hub link again:\n${link}\n\nDon't share it — it's your key.` : inviteText_(p);
   const subject = acc ? 'How to sign in to the Team Hub' : recovery ? 'Your Team Hub link' : (access_(p) === 'viewer' ? 'Your guest link to our Team Hub' : 'Welcome to the team — your Team Hub link');
@@ -1849,7 +2184,8 @@ function weeklyReport() {
   if (silent.length) full += '\n🔇 Not on the hub for 5+ days: ' + silent.join(', ') + '\n';
   full += '\n' + progressText_();
   notifyLeads_({ text: full, subject: `Weekly report — ${days} days to go`, button: ['Open the dashboard', hubUrl_('admin')] });
-  const gm = `📊 Week report — ${days} days to ${event_()}\nDone this week: ${done7.length} · Overdue: ${over.length}\n` + (next.length ? 'Next 7 days:\n' + next.slice(0, 6).map(t => `• ${t.due.slice(5, 10)} ${nm(t.owner)}: ${t.title}`).join('\n') : 'Nothing due next week.');
+  const gm = `📊 Week report — ${days} days to ${event_()}\nDone this week: ${done7.length} · Overdue: ${over.length}\n` + (next.length ? 'Next 7 days:\n' + next.slice(0, 6).map(t => `• ${t.due.slice(5, 10)} ${nm(t.owner)}: ${t.title}`).join('\n') : 'Nothing due next week.') +
+    (signupLine_() ? '\n' + signupLine_() : '');
   if (S_().group_done_posts !== 'no') postGroup_(gm);
   log_('system', '', 'Weekly report', `done ${done7.length}, overdue ${over.length}`);
   return full;
@@ -1866,6 +2202,7 @@ function progressText_() {
   rowsP.forEach(r => { s += `\n${r.over || r.blk ? '🔴' : r.done === r.total && r.total ? '✅' : '🟢'} ${first_(r.p)}: ${r.done}/${r.total} done` + (r.prog ? ` · ${r.prog} in progress` : '') + (r.over ? ` · ${r.over} overdue` : '') + (r.blk ? ` · ${r.blk} blocked` : ''); });
   const nobody = tasks.filter(t => !t.owner && t.status !== 'Done');
   if (nobody.length) s += `\n📭 Unassigned: ${nobody.length} open task(s) — give them to someone, or let people take them`;
+  const su = signupLine_(); if (su) s += '\n\n' + su;
   return s;
 }
 /** Team-wide picture by person NAME: group digest, /team and the leads' daily summary. */
@@ -2005,10 +2342,11 @@ function privateMsg_(m, parts, cmd, uid, me, people) {
   }
   if (!me) return; // strangers get nothing
   if (cmd === '/tasks') { tg_(chat, openList_(me) || 'Nothing open. 🎉'); return; }
-  if (cmd === '/hub') { tg_(chat, (account_(me) ? `Your Team Hub (sign in as "${account_(me).username}"):\n` : 'Your personal Team Hub (only yours — don\'t share):\n') + linkFor_(me)); return; }
+  if (cmd === '/hub') { tg_(chat, account_(me) ? `Your Team Hub (sign in as "${account_(me).username}"):\n${linkFor_(me)}` : inviteMode_() ? `Your Team Hub:\n${linkFor_(me)}\n\nIt opens on the phones you already signed in on${me.google_sub ? ', or press "Sign in with Google"' : ''}. New phone? Ask ${contact_()} for a new invite.` : 'Your personal Team Hub (only yours — don\'t share):\n' + linkFor_(me)); return; }
+  if (cmd === '/signups') { tg_(chat, signupsCmd_(me, parts[1])); return; }
   if (cmd === '/progress') { tg_(chat, isLead_(me) ? progressText_() : summaryText_().text); return; }
   if (cmd === '/team' || cmd === '/status') { tg_(chat, summaryText_().text); return; }
-  tg_(chat, 'I only send reminders. Report in your Team Hub (Start / Done / Blocked). /tasks · /hub · /team');
+  tg_(chat, 'I only send reminders. Report in your Team Hub (Start / Done / Blocked). /tasks · /hub · /team · /signups');
 }
 function groupMsg_(m, txt, cmd, me) {
   if (!me) {
@@ -2034,8 +2372,17 @@ function groupMsg_(m, txt, cmd, me) {
   if (cmd === '/tasks') { say(me.name + ':\n' + (openList_(me) || 'Nothing open. 🎉')); return; }
   if (cmd === '/progress') { say(progressText_()); return; }
   if (cmd === '/team' || cmd === '/status') { say(summaryText_().text); return; }
+  if (cmd === '/signups') { const n = txt.split(/\s+/)[1], r = signupsCmd_(me, n, true); if (r) say(r); return; }
   if (cmd === '/blocked') { const b = rows_('Tasks').filter(t => t.status === 'Blocked'); say(b.length ? b.map(t => `• ${nameOf_(t.owner)} — ${t.id} ${t.title}: ${t.blocked_reason}`).join('\n') : 'Nothing blocked. 🎉'); return; }
-  if (cmd === '/help') say('Commands: /tasks (yours) · /team (overdue + blocked) · /blocked. Report a task here: "T014 DONE — link" or "T014 BLOCKED — what you need".');
+  if (cmd === '/help') say('Commands: /tasks (yours) · /team (overdue + blocked) · /blocked · /signups (leads: /signups 57 saves today\'s count). Report a task here: "T014 DONE — link" or "T014 BLOCKED — what you need".');
+}
+/** /signups → the count; a lead's /signups 57 saves today's total. inGroup: the saved count is posted by the feed already, so say nothing more. */
+function signupsCmd_(me, n, inGroup) {
+  if (n === undefined || n === '') return signupLine_() || 'No signup count yet.' + (isLead_(me) ? ' Send /signups 57 with the number from HQ\'s dashboard.' : '');
+  if (!isLead_(me)) return 'Only leads can save the signup count.';
+  const r = recordSignups_(me.name, n, { source: 'Telegram' });
+  if (!r.ok) return '⚠️ ' + r.error;
+  return inGroup && r.posted ? '' : '✅ Saved. ' + signupLine_();
 }
 function openList_(p) {
   const open = rows_('Tasks').filter(t => t.owner === p.key && ['Done', 'Dropped'].indexOf(t.status) < 0).sort((a, b) => a.due < b.due ? -1 : 1);

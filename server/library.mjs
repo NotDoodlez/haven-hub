@@ -51,7 +51,7 @@ export function createLibrary({ dataDir, log = () => {}, git = 'git', urlFor = r
         byPath = new Map(tree.map(f => [f.path, f]));
         if (!changed || !before) return { changed, head, before };
         const was = new Map(old.map(f => [f.path, f.sha]));
-        return { changed, head, before, added: tree.filter(f => !was.has(f.path) || was.get(f.path) !== f.sha).map(f => f.path), removed: old.filter(f => !byPath.has(f.path)).map(f => f.path) };
+        return { changed, head, before, added: tree.filter(f => !was.has(f.path) || was.get(f.path) !== f.sha).map(f => f.path), created: tree.filter(f => !was.has(f.path)).map(f => f.path), removed: old.filter(f => !byPath.has(f.path)).map(f => f.path) };
       } catch (e) {
         state = Object.assign({}, state, { syncedAt: Date.now(), error: 'Could not update the team files from GitHub: ' + e.message });
         log('team files: ' + e.message);
