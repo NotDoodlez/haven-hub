@@ -7,11 +7,12 @@ Haven Hub gives your organizing team:
 - **A task list for every organizer.** Steps, a deadline, who to ask, and one button each for **Start**, **Done** (with a photo, file or link as proof) and **I'm blocked**.
 - **An admin dashboard for you.** It has an overview, an all-tasks table with bulk edits and CSV import, proof review, a timeline, scorecards, and people management.
 - **Reminders.** People get one the evening before each deadline, by email and/or a Telegram bot. Leads get instant BLOCKED alerts and a weekly report.
-- **A public page for your event.** It shows a countdown, your signup link, your organizing progress and a **Join the team** form.
+- **A public page for your event** in English, Uzbek or Russian. It shows a countdown, your signup link, your organizing progress (and your signup count, if you like) and links to the **Apply** page.
+- **Signups, the group feed and an inbox.** Track HQ's signup count and the funding it earns, let the organizer group hear about new signups, applications and files, and see new emails to your city address in one list.
 - **Guest links.** HQ, a mentor or a sponsor can get a read-only view of your progress.
 - **A team page with a page per person** — photos, roles, their work and their latest activity.
 - **A sponsors gallery.** Drop a logo and it shows on your public page; one click copies the sponsors block for your city page on haven.hackclub.com.
-- **Sign-in your way.** Personal links to start; then “Sign in with Google” or a password, and a one-time reset link when someone forgets.
+- **Sign-in your way.** A single-use invite, then “Sign in with Google”, a password (own server) or just their device — and a one-time reset link when someone forgets.
 
 Everything is stored in **a Google Sheet that you own**. The website is shared by every Haven, but it only shows your data to people who have one of your links.
 
@@ -25,7 +26,7 @@ Everything is stored in **a Google Sheet that you own**. The website is shared b
 Your Google Sheet ── the database. You can open it and edit it by hand.
    └─ Apps Script (Code.gs) ── the hub's server. It runs as you, for free, inside your Google account.
           ▲
-          │  personal links: https://notazizelse.github.io/haven-hub/?hub=<your id>&u=<name>&t=<secret>
+          │  invites: https://notazizelse.github.io/haven-hub/?hub=<your id>#/invite?k=<works once>
           │
 The website (shared by all Havens) ── what everyone opens on their phone or laptop.
 ```
@@ -74,9 +75,11 @@ You now have **your admin link**. Bookmark it — it's your key. If you gave you
 
 1. Go to **Dashboard → People → Add organizer**.
 2. Fill in their name and role, plus an email and/or Telegram username if you have them.
-3. Leave **Email them their link now** on, or send the link yourself: copy the ready-made message, or use **Share on Telegram**.
+3. Leave **Email them their invite now** on, or send the invite yourself: copy the ready-made message, or use **Share on Telegram**.
 
-Each person opens their link and sees **only their own tasks**. They don't need an account or a password.
+Each person opens their invite **once** and picks how they sign in from then on: **Sign in with Google** (Step 8), a **password** (own server) or **just this device**. After that the invite — and any message that carried it — lets nobody in, so a forwarded message is harmless. Invites expire after 7 days (**Settings → How people sign in**); **People** shows *invite sent* or *invite expired*, and **⋯ → New invite & message** makes a fresh one. Everyone then sees **only their own tasks**.
+
+*Prefer the old way?* **Settings → How people sign in → Personal links**: each person gets a link that keeps working, like Haven Hub v4. Hubs set up before v5 stay on personal links until you switch.
 
 **Access levels:**
 
@@ -99,7 +102,7 @@ Each person opens their link and sees **only their own tasks**. They don't need 
 
 The bot only ever talks to people on your team, and ignores everyone else.
 
-## Step 6 — Public page and join form (optional)
+## Step 6 — Public page and Apply page (optional)
 
 Go to **Settings → Public page** and copy your public link: `https://notazizelse.github.io/haven-hub/?hub=<your id>`. Put it in your Instagram bio, on posters and in your Telegram channel.
 
@@ -108,13 +111,23 @@ Go to **Settings → Public page** and copy your public link: `https://notazizel
 - your signup link — use **your city's page on haven.hackclub.com**, because HQ's form is what counts for funding;
 - your social links;
 - the **% of organizing tasks done** and any milestones you marked *Public*;
-- the **Join the team** form.
+- your **signup count**, if you switch it on (Step 6b);
+- a link to the **Apply** page (`#/apply`) — the *Join the team* form.
+
+**Languages.** In **Settings → Public page** pick the main language and the others (English, Oʻzbekcha, Русский). Visitors get a language switch; `?lang=uz` in the link opens a language directly. The buttons and the form come translated; write your tagline and the text above the form once per language (empty = the English text). The Apply page asks for name, contact, age group, school, what they'd like to help with and when they're free, and stores the answers in English with the language used — so you know which language to answer in. The Uzbek and Russian texts were written for Haven Tashkent: please have a native speaker check them, and send corrections to [`docs/js/i18n.js`](docs/js/i18n.js).
 
 **Team names are hidden unless you turn them on.** Most organizers are under 18, so ask them first.
 
 Join-form answers appear in **Dashboard → Applications**. Accepting someone opens *Add organizer* already filled in. If someone is 19+, the hub reminds you of HQ's age rule: they can't organize or take part, but they can mentor or volunteer.
 
 If the person is **already on the team** (same email, Telegram username or name), the application says so: close it as theirs, give them a task in that area, or open their page — nobody gets a second account. A first name alone is only flagged as a *maybe*.
+
+## Step 6b — Signups, the group feed and the inbox (optional)
+
+- **Signup count.** HQ counts funding on its own signup page, so the hub can't see it: a lead types the number from HQ's dashboard on **Overview → Participant signups → Update the count**, or sends `/signups 57` to the bot. Set your goal and HQ's per-signup amount for your country in **Settings → Signups & the group feed** to see progress and the funding estimate. **Show the signup count on the public page** is off by default.
+- **Group feed.** With the bot in your organizer group (Step 5), the group hears about new signup counts, new applications (first name, age group and interest only — never contacts) and new files. Switch each one off in the same card.
+- **Inbox watcher** (5 minutes). **Settings → Connections → Make a feed key.** Then, signed in to Google as your **city mailbox**, open [script.new](https://script.new), paste [`apps-script/inbox-watcher.gs`](apps-script/inbox-watcher.gs), fill in `HUB_API` and `FEED_KEY` from the Connections card, choose **install → Run** and allow access. Every 5 minutes it sends the hub the sender, subject and first lines of new emails; leads see them in **Dashboard → Inbox** (and get a Telegram message), mark them handled or ignored, or **Make a task** for someone. Replies still happen in Gmail. The watcher runs in the mailbox's own account, so the hub itself never gets access to email. If your mailbox's organization blocks Apps Script, forward the mail to a Gmail you own and run the watcher there.
+- **The feed key** can only add emails to the Inbox and save the signup count. **Make a new key** switches every script off until you paste the new one.
 
 ## Step 7 — Sponsors (optional)
 
@@ -151,12 +164,15 @@ People can then sign in with their Google account, and new people can **Sign up 
 | Check proof | **Review** → **Approve**, or **Ask for a redo** (they're told what to fix) |
 | Add meetings, team rules, milestones | **Meetings & rules** |
 | Someone leaves | **People → ⋯ → Remove from the team.** Hand their open tasks to their backup in the same step |
-| A link was shared by mistake | **People → ⋯ → Reset link.** The old link stops working immediately |
+| Send someone a new invite | **People → ⋯ → New invite & message** (or **Email a new invite**). Their older invite stops working |
+| A link was shared by mistake, or a phone was lost | **People → ⋯ → Reset link / Reset sign-in.** They're signed out everywhere and get a new invite or link |
 | Someone forgot their password (own server) | **People → ⋯ → Send a password reset link.** Send it on Telegram, by email, or copy it. It works once, for 24 hours; their username and Telegram stay. (**Reset sign-in** starts over completely with a new link) |
 | See everything about someone | **Team → click them** (or People → click the row): their job, contacts, open and finished tasks with proof, hours and latest activity. Admins edit, reset and remove from there |
 | Add a sponsor | **Sponsors → drop the logo** → name it → Save. **Copy for haven.hackclub.com** for HQ's city page |
 | Add my photo | **Profile → Add your photo** (or the camera on your page). Admins can set anyone's from their page |
-| Someone lost their link | They use **Organizer sign-in → Email me my link**, or you use **People → ⋯ → Get link** |
+| Someone lost their link | They use **Organizer sign-in → Email me my link** (with invites: a new invite that works for 24 hours), or you use **People → ⋯ → New invite** / **Get link** |
+| Upload a poster or a PDF | **Files → Upload a file** (up to about 6 MB; team-only unless you choose otherwise) |
+| Answer a new email | **Inbox** → **Open in Gmail**, then **Handled** — or **Make a task** for whoever should answer |
 | Get the volunteer-hours list for HQ | **People → Volunteer hours (CSV)** |
 | Back up everything | **Settings → Export all data**, or just open the Sheet |
 | I lost my admin link | Open your Sheet → menu **Haven Hub → Show admin links** |
@@ -178,6 +194,8 @@ When a new version comes out, admins see an *Update available* banner. Updating 
 **The URL stays the same, so nobody needs a new link.** Don't click *New deployment* — that would create a new URL.
 
 On your own server, run `~/haven/hubctl deploy` instead.
+
+**Updating to v5** keeps everyone on their personal links. To switch to single-use invites: **Settings → How people sign in → Single-use invites**, then send each person a new invite (**People → ⋯ → New invite & message**). Links people already have keep working until you reset them.
 
 Coming from the first Team Hub (v3)? Paste v4 and deploy a new version as above. The Sheet upgrades itself on the first request: it adds the new columns and keeps every token and Telegram connection. Leads become admins. Then check **Settings**.
 
@@ -265,12 +283,14 @@ No domain yet? `QUICK_TUNNEL=1` gives a temporary `https://….trycloudflare.com
 Most people on a Haven team are 13–18, so the hub is built to collect as little as possible:
 
 - **Your data stays in your Google Sheet.** The shared website stores nothing. It only passes requests between people's browsers and your Sheet.
-- **Links are keys, not passwords.** They're long random codes. If one leaks, reset it; the hub removes it from the address bar after opening.
+- **Invites work once.** A message with an invite lets nobody in after it's used, and invites expire. Personal links (the older way) are keys, not passwords: long random codes. If one leaks, reset it; the hub removes it from the address bar after opening.
 - **The public page** shows only what you switch on. Team names are off by default.
 - **Guest viewers** never see proof photos, contact details or notes.
 - **Email and Telegram messages only go to people in your People tab.** The join form never emails the person who filled it in, so nobody can use your hub to send spam.
 - **Proof photos** are stored in a private folder in your Google Drive (*"… — Team Hub proof files"*). Only leads, and the person who uploaded a photo, can open it through the hub.
 - **Profile photos** are small pictures kept in the People tab. The team sees them; they never appear on the public page.
+- **Uploads on Files** go to a private Drive folder (*"… — Team Hub files"*) or `data/files` on your own server, and are only handed to people allowed to see that tile (team-only by default).
+- **The inbox watcher** sends the hub only the sender, subject, first lines and a Gmail link of each new email. Members and guests never see the Inbox.
 - **Sponsor logos** are the only public pictures (see Step 7).
 - **Google sign-in** only tells the hub a person's Google id, name, email and picture. The hub never sees a Google password and asks for no other access.
 - **HQ age rule:** anyone 19 or older at the event can't organize or take part — only mentor or volunteer.
@@ -282,6 +302,8 @@ Most people on a Haven team are 13–18, so the hub is built to collect as littl
 | You see | Fix |
 |---|---|
 | *"This link doesn't work (any more)"* | The link was reset, or the person was removed. Send a fresh one from **People → ⋯ → Get link** |
+| *"This invite was used already"* / *"has expired"* | Send a new one: **People → ⋯ → New invite & message**. Someone who already joined signs in the way they chose then |
+| The Inbox stays empty | In the watcher's Apps Script project: **Executions** shows the error. *Wrong feed key* = paste the current one from **Settings → Connections** |
 | *"Could not reach the hub"* | Check your internet. If it keeps happening: the deployment must be **Who has access: Anyone**, and the URL must end in `/exec` |
 | *"The hub answered with a web page instead of data"* | Same as above. Also make sure you deployed a **Web app**, not an API executable |
 | *"This hub needs an update"* | The website is newer than your Code.gs. See **Updating** above |

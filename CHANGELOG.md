@@ -2,6 +2,18 @@
 
 A hub keeps working when the website is newer than its backend: new pages appear once the hub's `Code.gs` lists the feature. To update a Google Sheet hub, paste the new `Code.gs` and deploy a **new version** of the same deployment ([setup.md → Updating](setup.md#updating)); on your own server run `hubctl deploy`.
 
+## 5.0.0 — 2026-10-03
+
+- **Single-use invites** (setting `signin_mode`, Settings → How people sign in). An invite (`#/invite?k=…`) works once: the person opens it and picks *Sign in with Google*, a password (own server) or *just this device*, and it is used up. Messages, reminders and the bot never carry a key, so a forwarded or leaked message lets nobody in. A newer invite switches the older one off; invites expire after `invite_days` (7). People shows *invite sent* / *invite expired*; *⋯ → New invite & message*. **New hubs start with invites; hubs from before v5 keep personal links until an admin switches** — links people already have keep working until you reset them.
+- **Apply page in English, Uzbek and Russian** (`#/apply`). Pick the languages of the public page and the Apply page in Settings → Public page (the first is the default; `?lang=uz` picks one). The form now asks for school, several interests and free time; answers are stored in English with the language used, so the dashboard reads the same. The tagline and the join-form text can be written per language. Adding a language is one block in `docs/js/i18n.js` (CONTRIBUTING.md). ⚠️ The Uzbek and Russian texts need a native speaker's check.
+- **Participant signups.** Leads type HQ's count on the Overview (or send `/signups 57` to the bot, or a script pushes it with the feed key). The Signups card shows the goal, the trend and the funding estimate (`funding_per_signup`); the public page can show the count (`public_show_signups`).
+- **Group feed.** The organizer group hears about new signup counts, new applications (first name + interest only) and new files — each can be switched off (`feed_signups`, `feed_applications`, `feed_files`).
+- **Inbox.** `apps-script/inbox-watcher.gs` runs in your city mailbox's own Google account (the hub never gets permission to read mail) and reports new emails every 5 minutes. Leads see them in *Inbox*, get a Telegram message (`inbox_alerts`), and mark each one handled, ignored, or turn it into a task.
+- **Uploads on Files.** Anyone on the team uploads a picture, PDF, Office file, ZIP, MP4/MP3, font or text file (up to about 6 MB) — team-only by default. Files live in a private Drive folder (Google Sheet hubs) or `data/files` (own server) and are only handed to people allowed to see the tile. Uploaders and leads delete them.
+- **Feed key** (Settings → Connections): lets outside scripts call `inbox.push` and `signups.push` — nothing else. Renew it to switch every script off.
+- Setup wizard: invites on/off and the page languages. Demo and showcase updated. `apply` answers `dup: true` for a repeat; `ping` reports the sign-in mode.
+- Fixes: the server's allowed-origins list was read as one string; a reminders test failed near midnight in some time zones.
+
 ## 4.5.1 — 2026-10-03
 
 - **Last seen = the last time someone opened the hub.** Every visit stamps a new `last_seen` column in People (at most every 5 minutes); People, Team, the person pages, Scorecards (“Silent” = not on the hub for 5+ days) and the weekly report use it. Before, it was the last thing they *did*.

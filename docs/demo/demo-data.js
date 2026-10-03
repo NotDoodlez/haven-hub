@@ -9,7 +9,7 @@ export function seed(be, gas, hub) {
   const ok = (r, what) => { if (!r || !r.ok) throw new Error('Demo seed failed at ' + what + ': ' + (r && r.error)); return r; };
 
   const s = ok(be.post({ action: 'setup', sheet: gas._ss.getUrl(), hub, site: location.origin + location.pathname.replace(/\/[^/]*$/, ''), name: 'Maya Chen', role: 'Lead organizer', email: 'maya@example.com',
-    event: { name: 'Haven Springfield', city: 'Springfield', start: day(44).slice(0, 10), end: day(45).slice(0, 10), timezone: tz, signup: 'https://haven.hackclub.com/' }, starter: true }), 'setup');
+    event: { name: 'Haven Springfield', city: 'Springfield', start: day(44).slice(0, 10), end: day(45).slice(0, 10), timezone: tz, signup: 'https://haven.hackclub.com/' }, starter: true, invites: false }), 'setup'); // links first (the seed signs in as each person), invites switched on below
   const admin = { u: s.key, t: s.token };
   const as = (who, body) => be.post(Object.assign({}, body, who));
   const person = (p) => { const r = ok(as(admin, { action: 'person.add', person: p }), 'person ' + p.name); const q = new URL(r.link).searchParams; return { u: q.get('u'), t: q.get('t') }; };
@@ -85,9 +85,25 @@ export function seed(be, gas, hub) {
   const me = be.get(Object.assign({ action: 'me' }, admin));
   ok(as(admin, { action: 'list.save', tab: 'Milestones', rows: me.milestones.map((m, i) => Object.assign({}, m, { public: m.public || i === 0, done: i === 0 })).concat([{ date: day(-10).slice(0, 10), label: 'Signups open', kind: 'event', public: true, done: true }]) }), 'milestones');
   ok(as(admin, { action: 'settings.save', values: { instagram: 'https://instagram.com/haven.springfield.hackclub', city_email: 'springfield@haven.hackclub.com', google_client_id: 'demo-only.apps.googleusercontent.com' } }), 'settings'); // shows the Google buttons (the demo never calls Google)
-  be.post({ action: 'apply', name: 'Nora Kim', contact: '@nora_draws', age_group: '13-18', interest: 'Design & posters', note: 'I draw pixel art and can make stickers.' });
-  be.post({ action: 'apply', name: 'Mr. Alvarez', contact: 'alvarez@example.com', age_group: '19+', interest: 'Mentoring (19+)', note: 'CS teacher, happy to mentor on Saturday.' });
-  be.post({ action: 'apply', name: 'Priya', contact: 'priya@example.com', age_group: '13-18', interest: 'Design & posters', note: 'I also want to help with the posters!' }); // already on the team
+  // v5: languages, invites, signups, applications in three languages, the inbox, an upload
+  ok(as(admin, { action: 'settings.save', values: { signin_mode: 'invite', languages: 'en,uz,ru', signup_goal: '180', funding_per_signup: '7.5', public_show_signups: 'yes',
+    tagline_uz: 'Ikki kun. Bitta oʻyin. Oʻzing yasaysan.', tagline_ru: 'Два дня. Одна игра. Сделанная тобой.' } }), 'v5 settings');
+  [[-12, 8], [-9, 21], [-6, 37], [-3, 52], [0, 64]].forEach(([d, n]) => ok(as(admin, { action: 'signups.save', count: n, date: day(d).slice(0, 10) }), 'signups'));
+  be.post({ action: 'apply', name: 'Nora Kim', contact: '@nora_draws', age_group: '13-18', interests: ['Design & posters', 'Social media & video'], school: 'Westside School', availability: ['Weekends', 'The event weekend'], note: 'I draw pixel art and can make stickers.', lang: 'en' });
+  be.post({ action: 'apply', name: 'Mr. Alvarez', contact: 'alvarez@example.com', age_group: '19+', interests: ['Mentoring (19+)'], availability: ['The event weekend'], note: 'CS teacher, happy to mentor on Saturday.', lang: 'en' });
+  be.post({ action: 'apply', name: 'Priya', contact: 'priya@example.com', age_group: '13-18', interests: ['Design & posters'], note: 'I also want to help with the posters!', lang: 'en' }); // already on the team
+  be.post({ action: 'apply', name: 'Dilnoza', contact: '@dilnoza_art', age_group: '13-18', interests: ['Design & posters', 'Event weekend help'], school: 'School No. 12', availability: ['Weekday evenings'], note: 'Rasm chizaman, stikerlar ham qila olaman.', lang: 'uz' });
+  be.post({ action: 'apply', name: 'Artyom', contact: '@artyom_dev', age_group: '13-18', interests: ['Tech & website'], availability: ['Weekends'], note: 'Пишу на Python, хочу помочь с сайтом.', lang: 'ru' });
+  const fk = ok(as(admin, { action: 'feed.key' }), 'feed key').key;
+  ok(be.post({ action: 'inbox.push', key: fk, mailbox: 'springfield@haven.hackclub.com', items: [
+    { id: 'demo-m1', time: day(0, '09:12'), from: 'Ana Ruiz <ana@pixelworks.example>', subject: 'Re: Printing badges for Haven Springfield', snippet: 'Hi! We can print 120 badges by Friday. Could you send the final file as a PDF?', link: 'https://mail.google.com/mail/u/0/#all/demo-m1' },
+    { id: 'demo-m2', time: day(-1, '16:40'), from: 'Westside School <office@westside.example>', subject: 'Class visit on Thursday', snippet: 'Mr. Doyle can give you 10 minutes with his 9th grade class on Thursday at 11:00.', link: 'https://mail.google.com/mail/u/0/#all/demo-m2' },
+    { id: 'demo-m3', time: day(-2, '11:05'), from: 'HQ <haven@hackclub.example>', subject: 'Reminder: budget due 7 days before your event', snippet: 'Please send your budget at least a week before the event.', link: 'https://mail.google.com/mail/u/0/#all/demo-m3' }] }), 'inbox');
+  ok(as(admin, { action: 'inbox.update', id: 'demo-m3', status: 'done' }), 'inbox handled');
+  if (img) ok(as(P.lina, { action: 'file.upload', data: img, mime: 'image/png', fname: 'poster-final.png', title: 'Launch poster — final (PNG)', section: 'Posters and flyers', note: 'Print this one.', private: 'yes', preview: poster(true) }), 'file upload');
+  ok(as(admin, { action: 'person.link', key: 'theo' }), 'invite theo'); // an open invite
+  const iv = ok(as(admin, { action: 'person.link', key: 'priya' }), 'invite priya');
+  ok(be.post({ action: 'invite.claim', k: iv.link.split('k=')[1], how: 'device' }), 'priya joins'); // a used one
   // sponsors (made-up) — drawn logos, shown on the public page
   [['Maple Street Pizza', 'Food', 'Sunday lunch for everyone', logo('MAPLE ST', 'pizza · since 1998', '#C4541B', '#fff'), 'https://example.com/pizza'],
     ['Pixelworks Print', 'In-kind', 'All posters and badges', logo('PIXELWORKS', 'print shop', '#2F7D8C', '#fff'), 'https://example.com/print'],
@@ -132,15 +148,16 @@ function sprite(seed, bg, fg) {
   } catch (e) { return ''; }
 }
 
-/** A little "poster on a wall" picture for the demo proof (browser only). */
-function poster() {
+/** A little "poster on a wall" picture for the demo proof (browser only); small = the preview of the uploaded poster, as a data URL. */
+function poster(small) {
   try {
-    const c = document.createElement('canvas'); c.width = 640; c.height = 420; const g = c.getContext('2d');
+    const c = document.createElement('canvas'); c.width = small ? 240 : 640; c.height = small ? 158 : 420; const g = c.getContext('2d');
+    if (small) g.scale(240 / 640, 158 / 420);
     g.fillStyle = '#E9E2D6'; g.fillRect(0, 0, 640, 420);
     g.fillStyle = '#FC8616'; g.fillRect(200, 60, 240, 300);
     g.fillStyle = '#783D2B'; g.font = 'bold 34px sans-serif'; g.textAlign = 'center'; g.fillText('HAVEN', 320, 140); g.font = 'bold 20px sans-serif'; g.fillText('Springfield', 320, 175);
     g.fillStyle = '#fff'; g.font = '16px sans-serif'; g.fillText('Make a game in 2 days', 320, 230); g.fillText('ages 13–18 · free', 320, 256);
     g.fillStyle = '#B8C11F'; g.fillRect(260, 290, 120, 36); g.fillStyle = '#2B1D17'; g.font = 'bold 15px sans-serif'; g.fillText('SIGN UP', 320, 314);
-    return c.toDataURL('image/png').split(',')[1];
+    return small ? c.toDataURL('image/jpeg', 0.7) : c.toDataURL('image/png').split(',')[1];
   } catch (e) { return ''; }
 }

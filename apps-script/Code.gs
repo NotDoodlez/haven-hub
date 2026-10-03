@@ -1512,7 +1512,7 @@ function apply_(_, b) {
   if (['13-18', '19+'].indexOf(age) < 0) return { ok: false, error: 'Choose your age group.' };
   const cache = CacheService.getScriptCache(), n = Number(cache.get('apply_n') || 0), ck = 'apply_c_' + contact.toLowerCase().replace(/[^\w@.]/g, '').slice(0, 60);
   if (n >= 30) return { ok: false, error: 'Too many applications right now — try again in an hour.' };
-  if (cache.get(ck)) return { ok: true, message: 'We already have your application. An organizer will message you.' };
+  if (cache.get(ck)) return { ok: true, dup: true, message: 'We already have your application. An organizer will message you.' };
   cache.put('apply_n', String(n + 1), 3600); cache.put(ck, '1', 600);
   const all = rows_('Applications'), id = 'A' + ('00' + (all.reduce((m, a) => Math.max(m, parseInt(String(a.id).slice(1), 10) || 0), 0) + 1)).slice(-3);
   const a = { id: id, time: now_(), name: name, contact: contact, age_group: age, interest: clean_(list(b.interests || b.interest), 300), note: clean_(b.note, 1000), status: 'new', handled_by: '',
@@ -1826,7 +1826,7 @@ function dispatch_(q, method) {
 
 function apiPing_() {
   const ready = hasAdmin_();
-  return { ok: true, version: HUB_VERSION, ready: ready, event: ready ? { name: event_(), city: S_().city } : null, google: ready ? googleClientId_() : '' };
+  return { ok: true, version: HUB_VERSION, ready: ready, event: ready ? { name: event_(), city: S_().city } : null, google: ready ? googleClientId_() : '', signin: ready && inviteMode_() ? 'invite' : 'link' };
 }
 /** Leads: one person's page — what they did lately (the newest 60 log lines by them or about their tasks) and the applications that are theirs. */
 function personActivity_(me, q) {

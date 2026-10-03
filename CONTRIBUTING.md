@@ -25,6 +25,20 @@ Ground rules that keep every Haven working:
 5. **Plain, short wording** in the interface — many organizers read English as a second language.
 6. Add or update a test in `tests/` for every backend change.
 
+## Adding or fixing a language
+
+The public page and the Apply page are translated; the dashboard is English.
+
+1. Open [`docs/js/i18n.js`](docs/js/i18n.js). Copy the whole `en: { … }` block, give it your language's code (e.g. `kk`), and translate every value. Keep `{event}`, `{goal}`, `{done}`… exactly as they are.
+2. Add the language's own name to `NAMES` at the top (e.g. `kk: 'Қазақша'`).
+3. Add the code to `LANGS` near the top of `apps-script/Code.gs` (and `LANG_NAMES` next to it), then `npm run sync` and `npm test`.
+4. Check it in the demo: `?demo=1&as=guest&lang=kk`, then open *Apply to join*.
+5. In the pull request, say who checked the text — a native speaker, please.
+
+Fixing a word in Uzbek or Russian is just as welcome: those texts were written for Haven Tashkent and still need a native speaker's review.
+
+Interests and free-time answers are stored in English (`stored()` in i18n.js), so a new language never changes what the dashboard shows.
+
 ## Pull requests
 
 - One topic per pull request, with a short description of *what changes for organizers*.
@@ -33,6 +47,6 @@ Ground rules that keep every Haven working:
 
 ## Ideas we'd love help with
 
-- Translations of the interface (many Havens are not in English-speaking countries).
+- More languages for the public and Apply pages (see above), and translations of the dashboard itself.
 - A published template Sheet and a shared Google sign-in client (maintainer steps in [setup.md](setup.md#for-maintainers)).
-- An import of HQ's signup count (the daily leaderboard) into the overview.
+- A script that reads HQ's signup count and sends it with `signups.push` (the feed key is in Settings → Connections), so nobody has to type it.

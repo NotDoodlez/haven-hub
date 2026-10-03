@@ -1,5 +1,5 @@
 /* Overview (leads + guest viewers): KPIs, what needs attention, milestones, team progress, workload chart, activity. */
-import { $, esc, icon, avatar, kpi, bar, pill, dueInfo, parseLocal, fmtDay, fmtDue, daysTo, DAY, first, empty, ago } from '../ui.js';
+import { $, esc, icon, avatar, kpi, bar, pill, dueInfo, parseLocal, fmtDay, fmtDue, daysTo, DAY, first, empty, ago, modal, field, formValues, busy, toast } from '../ui.js';
 import { taskDrawer } from './admin-tasks.js';
 
 const OPEN = t => !['Done', 'Dropped'].includes(t.status);
@@ -15,6 +15,7 @@ export function overview(ctx) {
   let h = '';
   const newApps = (D.applications || []).filter(a => a.status === 'new').length;
   if (newApps) h += `<div class="banner info">${icon('inbox')}<div>${newApps} new ${newApps === 1 ? 'person wants' : 'people want'} to join the team. <a href="#/admin/applications">Review applications</a></div></div>`;
+  if (ctx.isLead && D.inboxNew) h += `<div class="banner info">${icon('mail')}<div>${D.inboxNew} new email${D.inboxNew === 1 ? '' : 's'} to your city address. <a href="#/admin/inbox">Open the inbox</a></div></div>`;
   const nobody = open.filter(t => !t.owner);
   if (nobody.length && ctx.isLead) h += `<div class="banner">${icon('inbox')}<div><b>${nobody.length} open task${nobody.length === 1 ? ' has' : 's have'} no owner</b>${nobody.some(t => dueInfo(t, tz).over) ? ' (some are overdue)' : ''}. Give them to someone, or let the team take them. <a href="#/admin/tasks?owner=-">See them</a></div></div>`;
   h += `<div class="kpis six">
@@ -25,6 +26,7 @@ export function overview(ctx) {
     ${kpi('open tasks', open.length, { icon: 'list', sub: `${done.length} of ${all.length} done` })}
     ${kpi(days > 0 ? 'days to the event' : 'event', days > 0 ? days : days === 0 ? 'Today' : 'Done', { tone: 'warn', icon: 'flag', sub: esc(fmtDay(D.event.start)) })}
   </div>`;
+  if (ctx.has('signups')) h += signupsCard(ctx);
   const attn = blocked.concat(over.filter(t => t.status !== 'Blocked'));
   const row = t => { const di = dueInfo(t, tz); return `<div class="attn ${ctx.isLead ? 'click' : ''}" data-id="${esc(t.id)}" ${ctx.isLead ? 'role="button" tabindex="0"' : ''}>${avatar(ctx.nameOf(t.owner), 'sm')}<div class="body"><b>${esc(t.title)}</b><span>${esc(first(ctx.nameOf(t.owner)))} · <span class="due ${di.cls}">${esc(di.label)}</span>${t.status === 'Blocked' && t.blocked_reason ? ' · needs: ' + esc(t.blocked_reason.slice(0, 90)) : ''}</span></div>${pill(t.status)}</div>`; };
   h += `<div class="grid-2"><div class="card"><div class="card-h"><h3>Needs attention</h3><span class="sub">blocked first, then overdue</span></div>${attn.length ? attn.slice(0, 8).map(row).join('') + (attn.length > 8 ? `<p class="small" style="margin:10px 0 0"><a href="#/admin/tasks">+ ${attn.length - 8} more</a></p>` : '') : empty({ title: 'Nothing is stuck', text: 'No blocked or overdue tasks. 🎉', img: 'daven' })}
@@ -43,6 +45,32 @@ export function overview(ctx) {
     ctx.el.addEventListener('click', open1); ctx.el.addEventListener('keydown', open1);
   }
   wireChart(ctx.el);
+  const su = $('#su-up', ctx.el); if (su) su.onclick = () => signupsModal(ctx);
+}
+
+/** Participant signups: HQ's count (typed by a lead, sent to the bot as /signups 57, or pushed by a script), against the goal. */
+function signupsCard(ctx) {
+  const S = ctx.D.signups || { list: [], total: 0 }, list = S.list || [], tz = ctx.tz;
+  const pct = S.goal ? Math.round(100 * S.total / S.goal) : 0, prev = list.length > 1 ? list[list.length - 2] : null;
+  const pts = list.slice(-30), max = Math.max(1, S.goal || 0, ...pts.map(x => x.count)), W = 220, H = 48;
+  const line = pts.length > 1 ? `<svg class="spark" viewBox="0 0 ${W} ${H}" role="img" aria-label="Signups over time"><polyline fill="none" stroke="#E87136" stroke-width="2.5" stroke-linejoin="round" points="${pts.map((x, i) => `${(i * W / (pts.length - 1)).toFixed(1)},${(H - 3 - (H - 6) * x.count / max).toFixed(1)}`).join(' ')}"/></svg>` : '';
+  return `<div class="card su-card" style="margin-bottom:18px"><div class="card-h"><div><h3>Participant signups</h3><div class="sub">${S.date ? `HQ's count on ${esc(fmtDay(S.date))}${list.length && list[list.length - 1].by ? ' · by ' + esc(first(list[list.length - 1].by)) : ''}` : 'From HQ\'s signup page — what funding is counted on'}</div></div>${ctx.isLead ? `<button class="btn soft sm" id="su-up">${icon('edit')} Update the count</button>` : ''}</div>
+    ${S.date ? `<div class="su-row"><div><span class="big-pct">${esc(S.total)}</span>${S.goal ? `<span class="muted"> of ${esc(S.goal)} (${pct}%)</span>` : ''}${prev ? `<div class="small muted">${S.total - prev.count >= 0 ? '+' : ''}${S.total - prev.count} since ${esc(fmtDay(prev.date))}</div>` : ''}${S.rate ? `<div class="small">≈ <b>$${Math.round(S.total * S.rate)}</b> from HQ at $${esc(Number(S.rate).toFixed(2))} per signup</div>` : ''}</div>${line}</div>${S.goal ? bar(pct, pct < 50 && daysTo(ctx.D.event.start, tz) < 21 ? 'warn' : '') : ''}`
+      : `<p class="muted" style="margin:0">No count yet.${ctx.isLead ? ' Press <b>Update the count</b> with the number from HQ\'s dashboard — or send <code>/signups 57</code> to the bot.' : ''}${ctx.isAdmin && !S.goal ? ' Set a goal in <a href="#/admin/settings">Settings</a>.' : ''}</p>`}</div>`;
+}
+function signupsModal(ctx) {
+  const D = ctx.D, S = D.signups || {}, today = new Date().toLocaleString('sv-SE', { timeZone: ctx.tz }).slice(0, 10);
+  const m = modal({ title: 'Update the signup count', size: 'sm', body: `<form id="suf"><p class="small muted" style="margin-top:0">The total on HQ's signup page today. One number per day — a second one the same day replaces it.</p>
+      ${field({ label: 'Signups so far', name: 'count', type: 'number', value: S.total || '', required: true, attrs: 'min="0" max="999999" inputmode="numeric" autofocus' })}
+      ${field({ label: 'Date', name: 'date', type: 'date', value: today, attrs: `max="${today}"` })}
+      ${field({ label: 'Note (optional)', name: 'note', placeholder: 'after the School 110 visit' })}</form>`,
+    foot: `<button class="btn ghost" data-close>Cancel</button><button class="btn primary" id="su-save">Save</button>` });
+  $('#su-save', m.el).onclick = async e => {
+    const v = formValues($('#suf', m.el)), b = e.currentTarget;
+    busy(b, true); const r = await ctx.api.post('signups.save', v); busy(b, false);
+    if (!r.ok) return toast(r.error, 'err');
+    D.signups = r.signups; ctx.api.cache(D); m.close(); toast(D.group && D.group.set && !(D.settings && D.settings.feed_signups === 'no') ? 'Saved — and posted in the organizer group.' : 'Saved.'); ctx.render();
+  };
 }
 
 /** Stacked columns: tasks due per week, done (bottom) + still open (top). Hover for exact numbers; a table view sits underneath. */
