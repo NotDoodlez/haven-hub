@@ -93,6 +93,7 @@ export function seed(be, gas, hub) {
   be.post({ action: 'apply', name: 'Mr. Alvarez', contact: 'alvarez@example.com', age_group: '19+', interests: ['Mentoring (19+)'], availability: ['The event weekend'], note: 'CS teacher, happy to mentor on Saturday.', lang: 'en' });
   be.post({ action: 'apply', name: 'Priya', contact: 'priya@example.com', age_group: '13-18', interests: ['Design & posters'], note: 'I also want to help with the posters!', lang: 'en' }); // already on the team
   be.post({ action: 'apply', name: 'Dilnoza', contact: '@dilnoza_art', age_group: '13-18', interests: ['Design & posters', 'Event weekend help'], school: 'School No. 12', availability: ['Weekday evenings'], note: 'Rasm chizaman, stikerlar ham qila olaman.', lang: 'uz' });
+  be.post({ action: 'apply', name: 'Sofia Reyes', contact: '@sofia_r', age_group: '13-18', interests: ['School ambassador (bring my school)'], school: 'Eastside School', availability: ['Weekday evenings'], note: 'I can tell my whole class and the coding club.', lang: 'en' });
   be.post({ action: 'apply', name: 'Artyom', contact: '@artyom_dev', age_group: '13-18', interests: ['Tech & website'], availability: ['Weekends'], note: 'Пишу на Python, хочу помочь с сайтом.', lang: 'ru' });
   const fk = ok(as(admin, { action: 'feed.key' }), 'feed key').key;
   ok(be.post({ action: 'inbox.push', key: fk, mailbox: 'springfield@haven.hackclub.com', items: [
@@ -110,6 +111,22 @@ export function seed(be, gas, hub) {
     ['Lighthouse Library', 'Venue', 'Two days in the big hall', logo('LIGHTHOUSE', 'public library', '#F9DD60', '#5C2C1F'), ''],
     ['Retro Arcade Club', 'Prize sponsor', 'Prizes for the three best games', logo('RETRO ARCADE', 'club', '#2B1D17', '#FC8616'), 'https://example.com/arcade']]
     .forEach(([name, tier, blurb, url, link]) => ok(as(admin, { action: 'sponsor.save', sponsor: { name, tier, blurb, link, logo_url: url, note: 'Made-up sponsor for the demo' } }), 'sponsor ' + name));
+  // 5.1: ambassadors (made-up students) and the names their links brought
+  ok(as(admin, { action: 'settings.save', values: { referrals: 'on', ambassador_group: 'https://t.me/+demo-ambassadors',
+    referral_rewards: '1 friend: stickers\n3 friends: same team as your friends + no queue at check-in\n5 friends: ambassador badge + thanks on stage',
+    referral_rewards_uz: '1 doʻst: stikerlar\n3 doʻst: doʻstlaring bilan bitta jamoa + navbatsiz kirish\n5 doʻst: ambassador nishoni + sahnada minnatdorchilik' } }), 'referral settings');
+  const amb = (who, a) => ok(as(who, { action: 'amb.save', amb: a }), 'ambassador ' + a.name).ambassador;
+  const AMB = [amb(P.theo, { name: 'Zara Ahmed', school: 'Westside School', contact: '@zara_draws', code: 'ZARA21', note: 'Grade 9, runs the art club' }),
+    amb(P.theo, { name: 'Leo Brandt', school: 'Lincoln Middle School', contact: '@leo_b' }),
+    amb(P.lina, { name: 'Mina Sato', school: 'Springfield High', contact: '@mina_s' }),
+    amb(admin, { name: 'Kofi Mensah', school: 'Riverside Lyceum', buddy: 'priya' }),
+    amb(P.theo, { name: 'Ivy Lopez', school: 'Westside School' })];
+  amb(admin, { name: 'Instagram bio', kind: 'channel', code: 'IG' });
+  const friends = ['Ana', 'Ben', 'Chloe', 'Dev', 'Ella', 'Finn', 'Gia', 'Hugo', 'Isla', 'Jay', 'Kai', 'Luz', 'Max', 'Nia', 'Omar', 'Pia'];
+  [[0, 7], [1, 3], [2, 4], [3, 1]].forEach(([i, n]) => friends.splice(0, n).forEach(f => be.post({ action: 'referral.save', code: AMB[i].code, name: f })));
+  be.post({ action: 'referral.save', code: 'IG', name: 'Remy' });
+  const refs = gas._ss.getSheetByName('Referrals'), rh = refs.data[0];
+  refs.data.slice(1).forEach((r, i) => { if (i % 3 === 0) r[rh.indexOf('time')] = day(-(9 + i), '17:20'); }); // some came in before this week
   // profile photos (pixel sprites, not real faces)
   [[admin, sprite(7, '#783D2B', '#FC8616')], [P.omar, sprite(19, '#2F7D8C', '#F9DD60')], [P.lina, sprite(42, '#A8A237', '#FFF7EE')], [P.priya, sprite(3, '#E87136', '#2B1D17')], [P.sam, sprite(77, '#5C2C1F', '#B8C11F')]]
     .forEach(([who, photo]) => { if (photo) ok(as(who, { action: 'photo.save', photo }), 'photo'); });

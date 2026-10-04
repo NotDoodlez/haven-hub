@@ -38,6 +38,22 @@ function feedCard(D, S) {
     ${field({ label: 'New emails (inbox watcher)', name: 'inbox_alerts', type: 'select', value: S.inbox_alerts || 'leads', options: [['leads', 'Telegram message to each lead'], ['group', 'Post in the organizer group'], ['no', 'Nobody — just the Inbox page']] })}
     <div class="row" style="margin-top:4px"><button class="btn primary" type="submit">Save</button></div></form>`;
 }
+/** Ambassadors' referral links: the name step (off until your Engagement Manager / HQ is OK with it), when names are deleted, the leaderboard, their page. */
+function referralCard(D, S) {
+  const on = S.referrals === 'on', others = (D.allLangs || []).filter(l => l.code !== 'en');
+  return `<form class="card" id="s-ref"><div class="card-h"><div><h3>Referrals & ambassadors</h3><div class="sub">Each ambassador has a link <code>…/r/CODE</code> (on posters as a QR code). It always ends on your signup page with <code>?ref=CODE</code>, so HQ counts it. <a href="#/admin/ambassadors">Ambassadors</a></div></div><span class="pill ${on ? 'ok' : ''}">${on ? 'names on' : 'names off'}</span></div>
+    ${field({ label: 'Ask the friend\'s first name first', name: 'referrals', type: 'select', value: S.referrals || 'off', full: true, options: [['off', 'Off — straight to the signup page, nothing saved'], ['on', 'On — save first name + code, then the signup page']],
+      hint: 'On = you see who invited whom and hand out rewards at check-in. It stores a first name of a minor: get your HQ contact\'s OK first. Printed QR codes work either way.' })}
+    <div class="form-grid">${field({ label: 'Delete names after', name: 'referral_delete_after', type: 'date', value: S.referral_delete_after || '', hint: 'Empty = 7 days after the event. Ambassadors\' contacts and page links go too; the numbers stay.' })}
+    ${field({ label: 'Leaderboard cap', name: 'referral_cap', type: 'number', value: S.referral_cap || '8', attrs: 'min="1" max="1000"', hint: 'Most friends one ambassador can count.' })}</div>
+    ${field({ label: 'Ambassadors\' Telegram group', name: 'ambassador_group', type: 'url', value: S.ambassador_group || '', placeholder: 'https://t.me/+…', hint: 'Shown on each ambassador\'s page. A group run by people — the bot never messages ambassadors.' })}
+    ${field({ label: 'Rewards (one per line)', name: 'referral_rewards', type: 'textarea', value: S.referral_rewards || '', attrs: 'rows="4"', placeholder: '1 friend: stickers\n3 friends: same team as your friends\n5 friends: ambassador badge + thanks on stage', hint: 'Start a line with the number of friends — the page ticks the ones they reached once the event starts. Empty = no rewards shown.' })}
+    ${field({ label: 'Message they forward (empty = the standard one)', name: 'amb_message', type: 'textarea', value: S.amb_message || '', attrs: 'rows="3"', placeholder: 'Hi! … Sign up with my link: {link}', hint: '{link} = their link.' })}
+    ${others.map(l => `<details class="small"><summary><b>Texts in ${esc(l.name)}</b> (empty = the English text)</summary>
+      ${field({ label: 'Rewards (' + l.name + ')', name: 'referral_rewards_' + l.code, type: 'textarea', value: S['referral_rewards_' + l.code] || '', attrs: 'rows="4"' })}
+      ${field({ label: 'Message (' + l.name + ')', name: 'amb_message_' + l.code, type: 'textarea', value: S['amb_message_' + l.code] || '', attrs: 'rows="3"' })}</details>`).join('')}
+    <div class="row" style="margin-top:4px"><button class="btn primary" type="submit">Save</button></div></form>`;
+}
 /** Small scripts that report into the hub: the inbox watcher (new emails) and anything that pushes the signup count. */
 function connCard(ctx, D) {
   const repo = String(ctx.cfg.repo || 'https://github.com/notazizelse/haven-hub');
@@ -75,6 +91,7 @@ export function settings(ctx) {
       `<button class="btn ghost" type="button" id="tmail">${icon('mail')} Send me a test email</button>`)}
     ${(D.features || []).includes('invites') ? signinCard(D, S) : ''}
     ${(D.features || []).includes('signups') ? feedCard(D, S) : ''}
+    ${(D.features || []).includes('ambassadors') ? referralCard(D, S) : ''}
     <div class="card" id="s-bot"><div class="card-h"><div><h3>Telegram bot <span class="muted small">(optional)</span></h3><div class="sub">Reminders in Telegram, BLOCKED alerts, and posts in your organizer group. Only talks to people on your team.</div></div>${D.bot ? `<span class="pill ok">${icon('check')} @${esc(D.bot)}</span>` : '<span class="pill">off</span>'}</div>
       ${D.bot ? '' : `<ol class="how"><li>In Telegram open <a href="https://t.me/BotFather" target="_blank" rel="noopener">@BotFather</a> → <code>/newbot</code> → name it “${esc(S.event_name)} Team”.</li><li>Copy the token it gives you (looks like <code>123456789:AAE…</code>) and paste it below. Never post it anywhere else.</li><li>Everyone presses <b>Connect Telegram</b> in their Profile.</li><li>Add the bot to your organizer group and send <code>/setgroup</code> there (as a lead).</li></ol>`}
       <div class="linkbox"><input type="password" id="tok" placeholder="${D.bot ? 'Paste a new token to replace it' : '123456789:AAE…'}" autocomplete="off" aria-label="Bot token"><button class="btn primary" id="tsave">Save token</button></div>
@@ -127,10 +144,10 @@ export function settings(ctx) {
     if (id === 's-files') { D.files = Object.assign({}, D.files, { repo: r.settings.files_repo, branch: r.settings.files_branch || 'main' }); ctx.api.cache(D); }
     toast(r.warning || 'Saved.', r.warning ? 'err' : 'ok');
     if (id === 's-event') ctx.render();
-    if (id === 's-google' || id === 's-signin') ctx.refresh();
+    if (id === 's-google' || id === 's-signin' || id === 's-ref') ctx.refresh();
     if (id === 's-pub') { const l = String(r.settings.languages || 'en').split(','); ctx.el.querySelectorAll('[data-langbox]').forEach(x => { x.hidden = !l.includes(x.dataset.langbox); }); }
   };
-  ['s-event', 's-rem', 's-pub', 's-hub', 's-files', 's-google', 's-signin', 's-feed'].forEach(id => { const f = $('#' + id); if (f) f.onsubmit = e => save(e, id); });
+  ['s-event', 's-rem', 's-pub', 's-hub', 's-files', 's-google', 's-signin', 's-feed', 's-ref'].forEach(id => { const f = $('#' + id); if (f) f.onsubmit = e => save(e, id); });
   const fk = $('#fk-show');
   if (fk) fk.onclick = async () => {
     const show = async renew => {

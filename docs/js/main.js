@@ -17,6 +17,8 @@ import { content } from './views/admin-content.js';
 import { sponsorsPage } from './views/admin-sponsors.js';
 import { settings } from './views/admin-settings.js';
 import { inboxPage } from './views/admin-inbox.js';
+import { ambassadorsPage } from './views/ambassadors.js';
+import { referralPage, ambassadorPage, posterPage } from './views/referral.js';
 import { filesPage } from './views/files.js';
 import { tourBar } from './views/tour.js';
 
@@ -36,6 +38,7 @@ const NAV = [
   { g: 'Me', r: 'team', t: 'Team', i: 'users', roles: ALL, v: member.team },
   { g: 'Me', r: 'rules', t: 'Rules', i: 'book', roles: DOERS, v: member.rules },
   { g: 'Me', r: 'profile', t: 'Profile', i: 'user', roles: ALL, v: member.profile },
+  { g: 'Manage', r: 'admin/ambassadors', t: 'Ambassadors', i: 'flag', roles: DOERS, v: ambassadorsPage, f: 'ambassadors' },
   { g: 'Manage', r: 'admin/people', t: 'People', i: 'userPlus', roles: ['admin'], v: people },
   { g: 'Manage', r: 'admin/applications', t: 'Applications', i: 'inbox', roles: ['admin'], v: applications, n: D => (D.applications || []).filter(a => a.status === 'new').length },
   { g: 'Manage', r: 'admin/sponsors', t: 'Sponsors', i: 'gift', roles: ['admin'], v: sponsorsPage, f: 'sponsors' },
@@ -151,6 +154,9 @@ function render() {
   if (r === 'reset') return resetPage(root, ctx);
   if (r === 'invite') return invitePage(root, ctx);
   if (r === 'apply') return applyPage(root, ctx);
+  if (/^r\/[\w-]{1,32}$/.test(r)) return referralPage(root, ctx, r.slice(2)); // an ambassador's link, for their friends
+  if (r === 'amb') return ambassadorPage(root, ctx); // an ambassador's own page (no sign-in)
+  if (r === 'amb/poster') return posterPage(root, ctx);
   if (!api.session()) {
     if (r === 'signin') return signin(root, ctx, ctx.google ? { google: true, miss: ctx.google } : {});
     if (r === 'join') return applyPage(root, ctx);

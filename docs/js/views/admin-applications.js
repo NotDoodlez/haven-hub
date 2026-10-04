@@ -4,11 +4,13 @@ import { esc, icon, avatar, toast, empty, ago, first } from '../ui.js';
 import { NAMES } from '../i18n.js';
 import { personDrawer, linkModal } from './admin-people.js';
 import { taskDrawer } from './admin-tasks.js';
+import { ambDrawer } from './ambassadors.js';
 
 let tab = 'new';
 const contactLink = c => /^@\w{4,}$/.test(c) ? `https://t.me/${c.slice(1)}` : /^[^\s@]+@[^\s@]+\.\w+$/.test(c) ? `mailto:${c}` : '';
 const areaOf = a => { const i = String(a.interest || '').split(', ')[0]; return AREA[i] || (i === 'Something else' ? '' : i); };
-const AREA = { 'Design & posters': 'Design', 'Social media & video': 'Growth', 'Schools & outreach': 'Outreach', 'Sponsors & partners': 'Sponsors', 'Tech & website': 'Tech', 'Event weekend help': 'Operations', 'Mentoring (19+)': 'Mentors' };
+const AREA = { 'Design & posters': 'Design', 'Social media & video': 'Growth', 'Schools & outreach': 'Outreach', 'Sponsors & partners': 'Sponsors', 'Tech & website': 'Tech', 'Event weekend help': 'Operations', 'Mentoring (19+)': 'Mentors', 'School ambassador (bring my school)': 'Outreach' };
+const wantsAmb = a => /School ambassador/.test(a.interest || '') && a.age_group !== '19+';
 
 export function applications(ctx) {
   const A = ctx.D.applications || [], by = s => A.filter(a => a.status === s);
@@ -23,6 +25,7 @@ export function applications(ctx) {
     const c = a.contact || '', email = a.email || (/@.+\./.test(c) && !c.startsWith('@') ? c : '');
     const preset = { name: a.name, handle: /^@\w+$/.test(c) ? c : '', email, area: areaOf(a), access: a.age_group === '19+' ? 'viewer' : 'member', role: a.age_group === '19+' ? 'Mentor / volunteer' : '' };
     if (b.dataset.a === 'page') return ctx.go('team/' + m.key);
+    if (b.dataset.a === 'amb') return ambDrawer(ctx, null, { name: a.name, school: a.school, contact: a.contact }, a.id);
     if (b.dataset.a === 'task') return taskDrawer(ctx, null, { owner: m.key, area: areaOf(a) });
     if (b.dataset.a === 'theirs') {
       const r = await ctx.api.post('application.update', { id: a.id, status: 'accepted', person: m.key });
@@ -49,14 +52,15 @@ function card(ctx, a) {
   const matchBox = !m ? '' : m.active
     ? `<div class="banner ${m.maybe ? '' : 'info'} match">${avatar(m.name, 'sm')}<div><b>${m.maybe ? 'Maybe already on the team' : 'Already on the team'}:</b> <a href="#/team/${esc(m.key)}">${esc(m.name)}</a>${m.role ? ` — ${esc(m.role)}` : ''}${m.area ? ` · ${esc(m.area)}` : ''}<div class="small">same ${esc(m.how)}${m.maybe ? ' — check before you accept' : ''}. ${here ? `They want to help with <b>${esc(a.interest || 'something new')}</b> too.` : ''}</div></div></div>`
     : `<div class="banner match">${icon('alert')}<div><b>Was on the team:</b> ${esc(m.name)} (removed). Add them back in People → Removed if you want them again.</div></div>`;
-  const acts = a.status === 'accepted' && a.person ? `<a class="btn ghost sm" href="#/team/${esc(a.person)}">${icon('user')} Open ${esc(first(ctx.nameOf(a.person)))}'s page</a>`
+  const acts = a.amb ? `<a class="btn ghost sm" href="#/admin/ambassadors">${icon('flag')} Ambassador now</a>`
+    : a.status === 'accepted' && a.person ? `<a class="btn ghost sm" href="#/team/${esc(a.person)}">${icon('user')} Open ${esc(first(ctx.nameOf(a.person)))}'s page</a>`
     : here && a.status === 'new' ? `<button class="btn primary sm" data-a="theirs">${icon('check')} Close — it's ${esc(first(m.name))}'s</button><button class="btn soft sm" data-a="task">${icon('plus')} Give ${esc(first(m.name))} a task</button><button class="btn ghost sm" data-a="page">${icon('user')} Their page</button>`
-    : a.status !== 'accepted' ? `<button class="btn primary sm" data-a="quick">${icon('userPlus')} Accept & invite</button><button class="btn soft sm" data-a="accept">${icon('edit')} Edit first</button>${m && m.maybe && m.active ? `<button class="btn ghost sm" data-a="theirs">It's ${esc(first(m.name))}</button>` : ''}` : '';
+    : a.status !== 'accepted' ? `${wantsAmb(a) && ctx.has('ambassadors') ? `<button class="btn primary sm" data-a="amb">${icon('flag')} Make ambassador</button>` : ''}<button class="btn ${wantsAmb(a) && ctx.has('ambassadors') ? 'soft' : 'primary'} sm" data-a="quick">${icon('userPlus')} Accept & invite</button><button class="btn soft sm" data-a="accept">${icon('edit')} Edit first</button>${m && m.maybe && m.active ? `<button class="btn ghost sm" data-a="theirs">It's ${esc(first(m.name))}</button>` : ''}` : '';
   return `<div class="card ${here && a.status === 'new' ? 'app-dup' : ''}" data-id="${esc(a.id)}"><div class="person-card">${avatar(a.name)}<div class="info"><b>${esc(a.name)}</b> ${a.age_group === '19+' ? '<span class="pill warn">19+</span>' : '<span class="pill">13–18</span>'}${a.verified ? ' <span class="pill ok" title="Signed up with Google — the email is confirmed">G verified</span>' : ''}${a.lang && a.lang !== 'en' ? ` <span class="pill ip" title="Filled in the form in ${esc(NAMES[a.lang] || a.lang)} — answer in that language">${esc(a.lang.toUpperCase())}</span>` : ''}
       <div class="small muted">${esc(ago(a.time, ctx.tz))}${a.handled_by ? ' · ' + esc(a.status) + ' by ' + esc(a.handled_by) : ''}</div></div></div>
     <p style="margin:10px 0 4px"><b>Wants to help with:</b> ${esc(a.interest || '—')}</p>${a.school || a.availability ? `<p class="small" style="margin:0 0 4px">${a.school ? `${icon('book')} ${esc(a.school)}` : ''}${a.school && a.availability ? ' · ' : ''}${a.availability ? `<b>Free:</b> ${esc(a.availability)}` : ''}</p>` : ''}${a.note ? `<p class="small" style="white-space:pre-line">${esc(a.note)}</p>` : ''}
     <p class="small">${link ? `<a href="${esc(link)}" target="_blank" rel="noopener">${icon(link.startsWith('mailto') ? 'mail' : 'message')} ${esc(a.contact)}</a>` : esc(a.contact)}${a.email && a.email !== a.contact ? ` · <a href="mailto:${esc(a.email)}">${esc(a.email)}</a>` : ''}</p>
     ${matchBox}
     ${a.age_group === '19+' ? `<div class="banner" style="margin:8px 0">${icon('alert')}<div class="small">Hack Club rule: people 19+ can't organize or participate — they can help as a mentor or volunteer.</div></div>` : ''}
-    <div class="actions">${acts}${a.status === 'new' ? '<button class="btn ghost sm" data-a="declined">Decline</button>' : a.person ? '' : '<button class="btn ghost sm" data-a="new">Move back to New</button>'}</div></div>`;
+    <div class="actions">${acts}${a.status === 'new' ? '<button class="btn ghost sm" data-a="declined">Decline</button>' : a.person || a.amb ? '' : '<button class="btn ghost sm" data-a="new">Move back to New</button>'}</div></div>`;
 }

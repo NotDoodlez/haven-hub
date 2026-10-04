@@ -80,7 +80,8 @@ case "${1:-status}" in
   quick-tunnel) quick_tunnel ;;
   tunnel-start) start_tunnel ;;
   tunnel-stop) stop_one tunnel; rm -f "$RUN/public_url"; echo "tunnel stopped" ;;
-  deploy)  git -C "$APP" pull --ff-only && ( cd "$APP" && PATH="$H/node/bin:$PATH" npm ci --omit=dev --no-audit --no-fund --loglevel=error ) && stop_one app && start_app ;;
+  deploy)  if alive app; then "$NODE" "$APP/server/cli.mjs" backup >/dev/null || { echo "the backup failed — not updating (hubctl logs)"; exit 1; }; echo "backup written before the update"; fi
+           git -C "$APP" pull --ff-only && ( cd "$APP" && PATH="$H/node/bin:$PATH" npm ci --omit=dev --no-audit --no-fund --loglevel=error ) && stop_one app && start_app ;;
   set-secret)
     k="${2:-}"; [[ "$k" =~ ^[A-Z0-9_]+$ ]] || { echo "usage: hubctl set-secret NAME   (e.g. SMTP_PASS)"; exit 1; }
     read -r -s -p "Paste $k and press Enter (nothing is shown): " v; echo

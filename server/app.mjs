@@ -491,6 +491,12 @@ export async function createHub(opts = {}) {
       }
       if (path === '/healthz') return send(res, 200, { ok: true, version: be.call('__eval', 'HUB_VERSION'), uptimeMin: Math.round((Date.now() - started) / 6e4) });
       if (path.startsWith('/file/d/')) return send(res, 302, '', 'text/plain', { Location: '/' }); // proof files open inside the hub (Show file)
+      if (path.startsWith('/r/') && (req.method === 'GET' || req.method === 'HEAD')) { // an ambassador's link (QR codes, posters): straight to the signup page, or the name step first
+        let c; try { c = decodeURIComponent(path.slice(3)); } catch (e) { c = ''; }
+        c = c.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 32);
+        const go = await run(() => { be.call('resetMemo_'); return be.call('hasAdmin_') && !be.call('referralsOn_') ? be.call('signupWithRef_', c) : ''; });
+        return send(res, 302, '', 'text/plain', { Location: go || '/#/r/' + c });
+      }
       if (path.startsWith('/files/pub/') && (req.method === 'GET' || req.method === 'HEAD')) return publicPicture(path.slice(11), req, res);
       if (path.startsWith('/files/raw/') && (req.method === 'GET' || req.method === 'HEAD')) { let rel; try { rel = decodeURIComponent(path.slice(11)); } catch (e) { return send(res, 400, 'Bad path', 'text/plain'); } return library.serve(rel, req, res); }
       if (req.method !== 'GET' && req.method !== 'HEAD') return send(res, 405, 'Method not allowed', 'text/plain');

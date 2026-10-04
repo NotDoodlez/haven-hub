@@ -3,13 +3,13 @@
 import { $, esc, icon, toast, busy, fmtDay, parseLocal, bar, skeleton, safeUrl, safeImg, formValues, googleG } from '../ui.js';
 import { parseLink, googleClient } from '../api.js';
 import { googleStart } from '../google.js';
-import { tr, langsOf, pickLang, setLang, textIn, langSwitch, INTERESTS, FREE, stored } from '../i18n.js';
+import { tr, langsOf, pickLang, setLang, textIn, langSwitch, INTERESTS, FREE, stored, dayIn } from '../i18n.js';
 
 let timer = null;
 
 function dates(ev, lang) {
   const year = String(ev.end || ev.start).slice(0, 4), loc = { uz: 'uz-UZ', ru: 'ru-RU' }[lang];
-  const day = d => loc ? new Date(String(d).slice(0, 10) + 'T12:00:00Z').toLocaleDateString(loc, { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }) : fmtDay(d);
+  const day = d => loc ? dayIn(d, lang, { weekday: true }) : fmtDay(d); // Uzbek by hand: browsers often lack it
   return ev.end && ev.end !== ev.start ? `${day(ev.start)} – ${day(ev.end)} ${year}` : `${day(ev.start)} ${year}`;
 }
 /** "Supported by": one grid of logo tiles in the admin's order, each saying what kind of help it is and linking to the sponsor. */

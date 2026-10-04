@@ -1,6 +1,7 @@
 /* Overview (leads + guest viewers): KPIs, what needs attention, milestones, team progress, workload chart, activity. */
 import { $, esc, icon, avatar, kpi, bar, pill, dueInfo, parseLocal, fmtDay, fmtDue, daysTo, DAY, first, empty, ago, modal, field, formValues, busy, toast } from '../ui.js';
 import { taskDrawer } from './admin-tasks.js';
+import { ambCard } from './ambassadors.js';
 
 const OPEN = t => !['Done', 'Dropped'].includes(t.status);
 const DONE_C = '#6F7C10', OPEN_C = '#DB8A3A'; // validated pair (dataviz validator: CVD ΔE 9.6, normal 19.0)
@@ -27,6 +28,7 @@ export function overview(ctx) {
     ${kpi(days > 0 ? 'days to the event' : 'event', days > 0 ? days : days === 0 ? 'Today' : 'Done', { tone: 'warn', icon: 'flag', sub: esc(fmtDay(D.event.start)) })}
   </div>`;
   if (ctx.has('signups')) h += signupsCard(ctx);
+  if (ctx.has('ambassadors') && ctx.isLead) h += ambCard(ctx);
   const attn = blocked.concat(over.filter(t => t.status !== 'Blocked'));
   const row = t => { const di = dueInfo(t, tz); return `<div class="attn ${ctx.isLead ? 'click' : ''}" data-id="${esc(t.id)}" ${ctx.isLead ? 'role="button" tabindex="0"' : ''}>${avatar(ctx.nameOf(t.owner), 'sm')}<div class="body"><b>${esc(t.title)}</b><span>${esc(first(ctx.nameOf(t.owner)))} · <span class="due ${di.cls}">${esc(di.label)}</span>${t.status === 'Blocked' && t.blocked_reason ? ' · needs: ' + esc(t.blocked_reason.slice(0, 90)) : ''}</span></div>${pill(t.status)}</div>`; };
   h += `<div class="grid-2"><div class="card"><div class="card-h"><h3>Needs attention</h3><span class="sub">blocked first, then overdue</span></div>${attn.length ? attn.slice(0, 8).map(row).join('') + (attn.length > 8 ? `<p class="small" style="margin:10px 0 0"><a href="#/admin/tasks">+ ${attn.length - 8} more</a></p>` : '') : empty({ title: 'Nothing is stuck', text: 'No blocked or overdue tasks. 🎉', img: 'daven' })}
