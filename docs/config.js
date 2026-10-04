@@ -2,7 +2,7 @@
 window.HUB_CONFIG = {
   // Running your own copy of the website for ONE hub? Put that hub's deployment ID (AKfy…) here,
   // so links work without ?hub=. Leave empty on the shared site.
-  defaultHub: '',
+  defaultHub: 'AKfycbx_0zBO23PtoozWWHgIq1OZt8viiUpr04tuGXMvsePzEolARODZsQ1qn6nCKEHRjmi0',
   // Maintainers: the "Make a copy" link of the public template Sheet (…/spreadsheets/d/<id>/copy).
   templateSheet: '',
   repo: 'https://github.com/notazizelse/haven-hub',
