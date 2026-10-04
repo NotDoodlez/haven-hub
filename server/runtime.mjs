@@ -2,7 +2,7 @@
    so the very same Code.gs runs on your own server. Everything here is synchronous (like Apps Script);
    anything slow (email, Telegram) goes into the outbox and is sent right after the request. */
 import { randomUUID, randomBytes } from 'node:crypto';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { FakeSheet, FakeSpreadsheet, builder, formatDate, b64encode, b64decode } from '../docs/demo/gas-fakes.js';
 
@@ -49,6 +49,7 @@ export function createRuntime({ store, filesDir, env, telegram }) {
     getId: () => row.id, getName: () => row.name, getDescription: () => row.descr || '',
     setDescription(d) { row.descr = d; store.setFileDescr(row.id, d); return this; }, setSharing() { return this; }, // public pictures are served by app.mjs (/files/pub/)
     getBlob: () => blob(readFileSync(join(filesDir, row.id)), row.mime, row.name, row.id),
+    setTrashed(yes) { if (yes) { rmSync(join(filesDir, row.id), { force: true }); store.delFile(row.id); } return this; }, // no bin on the server: the nightly backups keep old files
     getParents: () => { const f = [folderObj(row.folder)]; let i = 0; return { hasNext: () => i < f.length, next: () => f[i++] }; },
   });
   folderObj = id => {

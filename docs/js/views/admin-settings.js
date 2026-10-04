@@ -1,5 +1,5 @@
 /* Settings (admins): event, public page, reminders, Telegram bot, Google sign-in, hub & data. */
-import { $, esc, icon, toast, busy, field, formValues, copy, download, zones } from '../ui.js';
+import { $, esc, icon, toast, busy, field, formValues, copy, download, zones, confirmBox } from '../ui.js';
 import { redirectUri } from '../google.js';
 
 /** "Sign in with Google": what to register in Google Cloud, and where the client id goes (Settings on a Sheet hub, .env on a server). */
@@ -16,8 +16,43 @@ function googleCard(ctx, D, S) {
     <div class="row"><button class="btn primary" type="submit">Save</button></div></form>`;
 }
 
+/** Sign-in: single-use invites (new hubs) or personal links (hubs from before v5). */
+function signinCard(D, S) {
+  const inv = S.signin_mode === 'invite';
+  return `<form class="card" id="s-signin"><div class="card-h"><div><h3>How people sign in</h3><div class="sub">${inv ? 'Single-use invites: a message never carries a key, so a forwarded or leaked message lets nobody in.' : 'Personal links: each person\'s link is their key and keeps working until you reset it.'}</div></div><span class="pill ${inv ? 'ok' : ''}">${inv ? icon('shield') + ' invites' : 'links'}</span></div>
+    ${field({ label: 'Sign-in', name: 'signin_mode', type: 'select', value: S.signin_mode || 'link', options: [['invite', 'Single-use invites (recommended)'], ['link', 'Personal links (the v4 way)']], full: true,
+      hint: 'Invites work once: the person opens it and picks Google' + (D.accounts ? ', a password' : '') + ' or “just this device”. Switching changes only what you send from now on — devices that are signed in stay signed in, and links people already have keep working until you reset them.' })}
+    ${field({ label: 'Invites work for (days)', name: 'invite_days', type: 'number', value: S.invite_days || '7', attrs: 'min="1" max="60"' })}
+    <div class="row" style="margin-top:4px"><button class="btn primary" type="submit">Save</button></div></form>`;
+}
+/** Participant signups + what the bot posts in the organizer group. */
+function feedCard(D, S) {
+  return `<form class="card" id="s-feed"><div class="card-h"><div><h3>Signups & the group feed</h3><div class="sub">The signup count comes from HQ's signup page (it is what funding is counted on): a lead types it on the Overview, sends <code>/signups 57</code> to the bot, or a script pushes it.</div></div></div>
+    <div class="form-grid">${field({ label: 'Signup goal', name: 'signup_goal', type: 'number', value: S.signup_goal, placeholder: '180', attrs: 'min="1"' })}
+    ${field({ label: 'HQ funding per signup (USD)', name: 'funding_per_signup', value: S.funding_per_signup, placeholder: '3.25', hint: 'From HQ\'s per-country table. Empty = no estimate.' })}</div>
+    ${field({ label: 'Show the signup count on the public page', name: 'public_show_signups', type: 'toggle', value: S.public_show_signups })}
+    <div class="field"><span class="flabel">Post in the organizer group (Telegram)</span></div>
+    ${field({ label: 'New signup counts', name: 'feed_signups', type: 'toggle', value: S.feed_signups })}
+    ${field({ label: 'New team applications', name: 'feed_applications', type: 'toggle', value: S.feed_applications, hint: 'First name, age group and interest only — contacts stay in Applications.' })}
+    ${field({ label: 'New files and links', name: 'feed_files', type: 'toggle', value: S.feed_files, hint: 'Never the leads-only ones.' })}
+    ${field({ label: 'New emails (inbox watcher)', name: 'inbox_alerts', type: 'select', value: S.inbox_alerts || 'leads', options: [['leads', 'Telegram message to each lead'], ['group', 'Post in the organizer group'], ['no', 'Nobody — just the Inbox page']] })}
+    <div class="row" style="margin-top:4px"><button class="btn primary" type="submit">Save</button></div></form>`;
+}
+/** Small scripts that report into the hub: the inbox watcher (new emails) and anything that pushes the signup count. */
+function connCard(ctx, D) {
+  const repo = String(ctx.cfg.repo || 'https://github.com/notazizelse/haven-hub');
+  return `<div class="card" id="s-conn"><div class="card-h"><div><h3>Connections <span class="muted small">(optional)</span></h3><div class="sub">Small scripts that report into the hub with a <b>feed key</b>. The key can only add emails to the Inbox and save the signup count — nothing else.</div></div>${D.feed && D.feed.key ? `<span class="pill ok">${icon('check')} key made</span>` : ''}</div>
+    <div id="fk-out"><button class="btn soft" id="fk-show">${icon('key')} ${D.feed && D.feed.key ? 'Show the feed key' : 'Make a feed key'}</button></div>
+    <details class="small" style="margin-top:12px"><summary><b>Inbox watcher</b> — new emails to your city address show up in Inbox (5 minutes)</summary><ol class="how">
+      <li>Sign in to Google as your city mailbox (e.g. <code>yourcity@haven.hackclub.com</code>) and open <a href="https://script.new" target="_blank" rel="noopener">script.new</a>.</li>
+      <li>Replace everything with <a href="${esc(repo)}/blob/main/apps-script/inbox-watcher.gs" target="_blank" rel="noopener">inbox-watcher.gs</a> and fill in <code>HUB_API</code> and <code>FEED_KEY</code> at the top (below).</li>
+      <li>Choose the function <b>install</b> → <b>Run</b> → allow access. It checks the inbox every 5 minutes and sends the hub the sender, subject and the first lines of each new email.</li>
+      <li>If your mailbox is managed by an organization (like HQ's), its admins may have switched off Apps Script — then forward the mail to a Gmail you own and run the watcher there.</li></ol></details>
+    <details class="small"><summary><b>Push the signup count from a script</b></summary><p>POST to the hub address below: <code>{"action":"signups.push","key":"&lt;feed key&gt;","count":57,"source":"my script"}</code></p></details></div>`;
+}
+
 export function settings(ctx) {
-  const D = ctx.D, S = D.settings || {}, CFG = ctx.cfg, pub = ctx.api.publicUrl();
+  const D = ctx.D, S = D.settings || {}, CFG = ctx.cfg, pub = ctx.api.publicUrl(), langs = String(S.languages || 'en').split(',').filter(Boolean);
   const tz = zones(); if (S.timezone && !tz.includes(S.timezone)) tz.unshift(S.timezone);
   const form = (id, title, sub, inner, extra) => `<form class="card" id="${id}"><div class="card-h"><div><h3>${title}</h3>${sub ? `<div class="sub">${sub}</div>` : ''}</div></div>${inner}
     <div class="row" style="margin-top:4px"><button class="btn primary" type="submit">Save</button>${extra || ''}</div></form>`;
@@ -38,6 +73,8 @@ export function settings(ctx) {
       ${field({ label: 'Tell leads about every finished task', name: 'done_alerts', type: 'toggle', value: S.done_alerts, hint: 'Telegram DM with the proof photos.' })}
       ${field({ label: 'Post finished tasks in the Telegram group', name: 'group_done_posts', type: 'toggle', value: S.group_done_posts })}`,
       `<button class="btn ghost" type="button" id="tmail">${icon('mail')} Send me a test email</button>`)}
+    ${(D.features || []).includes('invites') ? signinCard(D, S) : ''}
+    ${(D.features || []).includes('signups') ? feedCard(D, S) : ''}
     <div class="card" id="s-bot"><div class="card-h"><div><h3>Telegram bot <span class="muted small">(optional)</span></h3><div class="sub">Reminders in Telegram, BLOCKED alerts, and posts in your organizer group. Only talks to people on your team.</div></div>${D.bot ? `<span class="pill ok">${icon('check')} @${esc(D.bot)}</span>` : '<span class="pill">off</span>'}</div>
       ${D.bot ? '' : `<ol class="how"><li>In Telegram open <a href="https://t.me/BotFather" target="_blank" rel="noopener">@BotFather</a> → <code>/newbot</code> → name it “${esc(S.event_name)} Team”.</li><li>Copy the token it gives you (looks like <code>123456789:AAE…</code>) and paste it below. Never post it anywhere else.</li><li>Everyone presses <b>Connect Telegram</b> in their Profile.</li><li>Add the bot to your organizer group and send <code>/setgroup</code> there (as a lead).</li></ol>`}
       <div class="linkbox"><input type="password" id="tok" placeholder="${D.bot ? 'Paste a new token to replace it' : '123456789:AAE…'}" autocomplete="off" aria-label="Bot token"><button class="btn primary" id="tsave">Save token</button></div>
@@ -48,6 +85,12 @@ export function settings(ctx) {
       <div class="field"><label>Public link — put it in your bio or on posters</label><div class="linkbox"><input readonly value="${esc(pub)}"><button class="btn soft" type="button" id="cpub">${icon('copy')} Copy</button></div></div>
       ${field({ label: 'Show the public page', name: 'public_page', type: 'toggle', value: S.public_page, hint: 'Off = only a sign-in screen.' })}
       ${field({ label: 'Tagline', name: 'tagline', value: S.tagline })}
+      <div class="form-grid">${field({ label: 'Main language of the public + Apply pages', name: 'lang_main', type: 'select', value: langs[0], options: (D.allLangs || [{ code: 'en', name: 'English' }]).map(l => [l.code, l.name]) })}
+      <div class="field"><span class="flabel">Also in</span><div class="radio-row chk">${(D.allLangs || []).map(l => `<label><input type="checkbox" name="lang_also" value="${esc(l.code)}" data-multi="1" ${langs.slice(1).includes(l.code) ? 'checked' : ''}> ${esc(l.name)}</label>`).join('')}</div></div></div>
+      ${(D.allLangs || []).filter(l => l.code !== 'en').map(l => `<details class="small" ${langs.includes(l.code) ? '' : 'hidden'} data-langbox="${esc(l.code)}"><summary><b>Texts in ${esc(l.name)}</b> (empty = the English text)</summary>
+        ${field({ label: 'Tagline (' + l.name + ')', name: 'tagline_' + l.code, value: S['tagline_' + l.code] || '' })}
+        ${field({ label: 'Text above the join form (' + l.name + ')', name: 'join_intro_' + l.code, type: 'textarea', value: S['join_intro_' + l.code] || '', attrs: 'rows="2" style="min-height:60px"' })}</details>`).join('')}
+      <p class="small muted">The page words (buttons, the form) come translated with the hub; your own texts above are yours to translate. <a href="${esc(pub)}#/apply" target="_blank" rel="noopener">Open the Apply page ${icon('external')}</a></p>
       ${field({ label: 'Participant signup link', name: 'signup_url', type: 'url', value: S.signup_url, placeholder: 'https://haven.hackclub.com/yourcity', hint: 'HQ\'s official signup page — it is what counts for funding.' })}
       <div class="form-grid">${field({ label: 'Public email', name: 'city_email', type: 'email', value: S.city_email, placeholder: 'yourcity@haven.hackclub.com' })}
       ${field({ label: 'Instagram link', name: 'instagram', type: 'url', value: S.instagram, placeholder: 'https://instagram.com/haven.yourcity.hackclub' })}
@@ -62,6 +105,7 @@ export function settings(ctx) {
       ${field({ label: 'Branch', name: 'files_branch', value: S.files_branch || 'main' })}`,
       S.files_repo ? `<a class="btn ghost" href="https://github.com/${esc(S.files_repo)}" target="_blank" rel="noopener">${icon('external')} Open on GitHub</a>` : '') : ''}
     ${googleCard(ctx, D, S)}
+    ${(D.features || []).includes('inbox') ? connCard(ctx, D) : ''}
     ${form('s-hub', 'Hub & data', 'Advanced — you rarely need to change these.', `
       ${field({ label: 'Website address', name: 'site_url', type: 'url', value: S.site_url, hint: 'Change it only if you run your own copy of the website.' })}
       ${field({ label: 'Hub ID (web-app deployment)', name: 'hub_id', value: S.hub_id, hint: 'Part of every personal link. Filled in automatically.' })}`,
@@ -73,6 +117,7 @@ export function settings(ctx) {
   const save = async (e, id) => {
     e.preventDefault();
     const f = $('#' + id), v = formValues(f), b = f.querySelector('button[type=submit]');
+    if (v.lang_main) { v.languages = [v.lang_main].concat((v.lang_also || []).filter(l => l !== v.lang_main)).join(','); delete v.lang_main; delete v.lang_also; }
     Object.keys(v).forEach(k => { if (typeof v[k] === 'boolean') v[k] = v[k] ? 'yes' : 'no'; });
     busy(b, true);
     const r = await ctx.api.post('settings.save', { values: v });
@@ -82,9 +127,24 @@ export function settings(ctx) {
     if (id === 's-files') { D.files = Object.assign({}, D.files, { repo: r.settings.files_repo, branch: r.settings.files_branch || 'main' }); ctx.api.cache(D); }
     toast(r.warning || 'Saved.', r.warning ? 'err' : 'ok');
     if (id === 's-event') ctx.render();
-    if (id === 's-google') ctx.refresh();
+    if (id === 's-google' || id === 's-signin') ctx.refresh();
+    if (id === 's-pub') { const l = String(r.settings.languages || 'en').split(','); ctx.el.querySelectorAll('[data-langbox]').forEach(x => { x.hidden = !l.includes(x.dataset.langbox); }); }
   };
-  ['s-event', 's-rem', 's-pub', 's-hub', 's-files', 's-google'].forEach(id => { const f = $('#' + id); if (f) f.onsubmit = e => save(e, id); });
+  ['s-event', 's-rem', 's-pub', 's-hub', 's-files', 's-google', 's-signin', 's-feed'].forEach(id => { const f = $('#' + id); if (f) f.onsubmit = e => save(e, id); });
+  const fk = $('#fk-show');
+  if (fk) fk.onclick = async () => {
+    const show = async renew => {
+      const r = await ctx.api.post('feed.key', { renew: !!renew });
+      if (!r.ok) return toast(r.error, 'err');
+      D.feed = { key: true, api: r.api }; ctx.api.cache(D);
+      $('#fk-out').innerHTML = `<div class="field"><label>Hub address (HUB_API)</label><div class="linkbox"><input readonly value="${esc(r.api || '(open the hub from its own address first)')}"><button class="btn soft" type="button" data-copy="${esc(r.api)}">${icon('copy')} Copy</button></div></div>
+        <div class="field"><label>Feed key (FEED_KEY) — keep it private</label><div class="linkbox"><input readonly value="${esc(r.key)}"><button class="btn soft" type="button" data-copy="${esc(r.key)}">${icon('copy')} Copy</button></div></div>
+        <button class="btn ghost sm danger" type="button" id="fk-new">${icon('refresh')} Make a new key (the old one stops working)</button>`;
+      $('#fk-out').querySelectorAll('[data-copy]').forEach(b => { b.onclick = () => copy(b.dataset.copy, 'Copied.'); });
+      $('#fk-new').onclick = async () => { if (await confirmBox({ title: 'Make a new feed key?', text: 'Scripts using the old key stop working until you paste the new one into them.', ok: 'Make a new key', danger: true })) { await show(true); toast('New key made — update your scripts.'); } };
+    };
+    await show(false);
+  };
   ctx.el.querySelectorAll('[data-copy]').forEach(b => { b.onclick = () => copy(b.dataset.copy, 'Copied.'); });
   $('#cpub').onclick = () => copy(pub, 'Public link copied.');
   $('#exp').onclick = async e => { const btn = e.currentTarget;

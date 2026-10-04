@@ -37,7 +37,7 @@ export async function createHub(opts = {}) {
   const google = createGoogle({ fetchImpl: opts.googleFetch || fetch, clientIds: () => [env.GOOGLE_CLIENT_ID] });
   const started = Date.now();
   // the website may live elsewhere (e.g. GitHub Pages) and call this server's /api — allow those origins
-  const origins = String(env.ALLOWED_ORIGINS || 'https://notazizelse.github.io') // the shared website.split(/[\s,]+/).filter(Boolean);
+  const origins = String(env.ALLOWED_ORIGINS || 'https://notazizelse.github.io').split(/[\s,]+/).filter(Boolean); // default: the shared website
   const linkBase = () => String(env.SITE_URL || env.publicUrl() || '').replace(/\/+$/, '');
   const home = () => linkBase() + (env.HUB_NAME ? '/?hub=' + env.HUB_NAME : '');
 
@@ -232,6 +232,40 @@ export async function createHub(opts = {}) {
       await run(() => { const p = person('findPerson_', x.key); if (p) be.call('log_', p.name, '', 'Password reset', 'with the link from an admin'); });
       return { ok: true, u: x.key, t: accounts.newSession(x.key), username: (accounts.info(x.key) || {}).username };
     },
+    /** A single-use invite (signin_mode = invite) → this device is signed in. how: 'device' (a session), 'google' (connects Google now)
+        or 'password' (makes a username + password now). The invite is used up in the same step, so a forwarded invite lets nobody in later. */
+    async 'invite.claim'(b, ip) {
+      if (limited(ip, 'invite', 40, 15 * 60e3)) return { ok: false, error: 'Too many tries from here — wait 15 minutes.' };
+      const how = ['google', 'password'].includes(b.how) ? b.how : 'device', k = String(b.k || '');
+      const who = await run(() => { be.call('resetMemo_'); const f = be.call('inviteFind_', k); return f.error ? { ok: false, code: f.code, error: f.error } : { ok: true, key: f.p.key, token: f.p.token || '', viewer: be.call('access_', f.p) === 'viewer' }; });
+      if (!who.ok) return who;
+      let claims = null, save = null, username = '';
+      if (how === 'google') { const g = await googleClaims(b, ip); if (g.error) return { ok: false, error: g.error }; claims = g.claims; }
+      if (how === 'password') {
+        username = String(b.username || '').trim().toLowerCase();
+        const password = String(b.password || '');
+        if (who.viewer) return { ok: false, error: "Guests don't use passwords — choose Google or \"Just this device\"." };
+        if (accounts.info(who.key)) return { ok: false, error: 'You have a password already — choose Google or "Just this device", or sign in with your username.' };
+        const bad = usernameProblem(username) || passwordProblem(password, username);
+        if (bad) return { ok: false, error: bad };
+        if (store.accountByName(username)) return { ok: false, error: 'That username is taken — pick another one.' };
+        save = await accounts.create(who.key, username, password, who.token);
+      }
+      let r;
+      try {
+        r = await run(() => {
+          be.call('resetMemo_');
+          const e = save ? save() : '';
+          if (e) return { ok: false, error: e };
+          const u = be.call('inviteUse_', k, how, claims);
+          if (!u.ok) { if (save) throw Object.assign(new Error(u.error), { out: u }); return u; } // undo the new account too
+          if (save) be.call('rotateToken_', who.key);
+          return u;
+        });
+      } catch (e) { if (e.out) return e.out; throw e; }
+      if (!r.ok) return r;
+      return { ok: true, u: r.key, t: accounts.newSession(r.key), name: r.name, username };
+    },
     async logout(b) { accounts.endSession(b.t); return { ok: true }; },
     async 'logout.all'(b) { const key = accounts.session(b.t); if (!key) return signedOut; accounts.endOtherSessions(key, ''); return { ok: true }; },
   };
@@ -306,7 +340,10 @@ export async function createHub(opts = {}) {
     store.metaPrefix('pwr:').forEach(m => { try { if (JSON.parse(m.v).exp < Date.now()) store.delMeta(m.k); } catch (e) { store.delMeta(m.k); } });
     nonces.forEach((exp, n) => { if (exp < Date.now()) nonces.delete(n); });
     const pulled = await library.maybeSync(S.files_repo || env.TEAM_REPO || '', S.files_branch || 'main', Number(env.TEAM_REPO_PULL_MIN) || 5);
-    if (pulled && pulled.changed && pulled.before) log(`team files: ${(pulled.added || []).length} new or changed, ${(pulled.removed || []).length} removed`);
+    if (pulled && pulled.changed && pulled.before) {
+      log(`team files: ${(pulled.added || []).length} new or changed, ${(pulled.removed || []).length} removed`);
+      if (ready && (pulled.created || []).length) await call('feedRepo_', pulled.created); // "📁 New in the team files: …" in the organizer group
+    }
     if (ready) await call('flushChanges', false); // task-change alerts wait until nobody edited for a minute
     const old = Date.now() - 3600e3; buckets.forEach((b, k) => { if (b.t < old) buckets.delete(k); });
     if (Date.now() - lastBotCheck > 60e3 && store.getProp('BOT_TOKEN')) {
@@ -348,7 +385,7 @@ export async function createHub(opts = {}) {
       const r = await run(() => { be.call('resetMemo_'); return { ready: be.call('hasAdmin_'), event: be.call('event_'), people: be.call('activePeople_').length, tasks: be.call('rows_', 'Tasks').length }; });
       return Object.assign(r, hubServer.stats(), { version: be.call('__eval', 'HUB_VERSION'), bot: store.getProp('BOT_USERNAME') || '', webhook: telegram.webhookUrl() });
     },
-    async 'admin-links'() { return run(() => { be.call('resetMemo_'); return be.call('activePeople_').filter(p => be.call('isAdmin_', p)).map(p => ({ name: p.name, link: be.call('linkFor_', p) })); }); },
+    async 'admin-links'() { return run(() => { be.call('resetMemo_'); return be.call('adminLinks_'); }); }, // with invites: a new single-use invite each (24 hours)
     async 'reset-link'(key) { return run(() => { be.call('resetMemo_'); const r = be.call('resetLink_', { name: 'server admin' }, { key }); if (!r.ok) throw new Error(r.error); return { link: r.link }; }); },
     async 'import-code'() { const c = code24(); store.setMeta('import_code', c); store.setMeta('import_code_exp', Date.now() + 2 * 3600e3); return { code: c, validFor: '2 hours', empty: !hasPeople(), server: env.publicUrl(), linksWillBe: home() }; },
     async 'setup-code'() { const c = code24(); store.setMeta('setup_code', c); store.setMeta('setup_code_exp', Date.now() + 2 * 3600e3); return { code: c, validFor: '2 hours' }; },

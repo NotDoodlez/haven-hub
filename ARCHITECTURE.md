@@ -11,11 +11,11 @@ flowchart LR
   end
   subgraph A["Setup A — no server (recommended)"]
     GS["Apps Script web app<br/>apps-script/Code.gs"] --- SH[("Google Sheet<br/>one tab per table")]
-    GS --- DR[("Google Drive<br/>proof files · public logos")]
+    GS --- DR[("Google Drive<br/>proof files · uploads · public logos")]
   end
   subgraph B["Setup B — your own server"]
     N["server/ — Node 22+<br/>runs the same Code.gs"] --- DB[("SQLite<br/>data/hub.db")]
-    N --- FS[("data/files<br/>proof files · public logos")]
+    N --- FS[("data/files<br/>proof files · uploads · public logos")]
     N --- TR[("data/team-repo<br/>mirror of the team files repo")]
   end
   W -- "JSON over HTTPS<br/>?hub=&lt;id&gt; picks the hub" --> GS
@@ -25,16 +25,20 @@ flowchart LR
   W -. "Sign in with Google (redirect)" .-> G["accounts.google.com"]
   N -. "checks the ID token with Google's keys" .-> G
   GS -. "tokeninfo" .-> G
+  IW["inbox-watcher.gs<br/>in the city mailbox"] -- "inbox.push + feed key" --> GS
+  IW -- "inbox.push + feed key" --> N
 ```
 
 | Part | Where | What it is |
 |---|---|---|
 | **Backend** | [`apps-script/Code.gs`](apps-script/Code.gs) | The whole backend in one paste-able file: the JSON API, permissions, reminders, change alerts, the Telegram bot, email, setup and upgrades. Google Apps Script runs it on a Sheet. |
-| **Database** | the Google Sheet (or SQLite) | One tab per table: `Settings`, `People`, `Tasks`, `Log`, `Meetings`, `Rules`, `Milestones`, `Applications`, `Sponsors`, `Resources` (+ `Links` and `Report`, which the hub writes for you). Code reads and writes columns **by header name**, and appends missing columns, so old Sheets upgrade in place. |
+| **Database** | the Google Sheet (or SQLite) | One tab per table: `Settings`, `People`, `Tasks`, `Log`, `Meetings`, `Rules`, `Milestones`, `Applications`, `Sponsors`, `Resources`, and — created the first time they are needed — `Invites`, `Signups`, `Inbox` (+ `Links` and `Report`, which the hub writes for you). Code reads and writes columns **by header name**, and appends missing columns, so old Sheets upgrade in place. |
 | **Website** | [`docs/`](docs/) | Static files served by GitHub Pages — or by the server. `index.html` → `js/main.js` (routing + app shell) → `js/views/*.js` (one file per page). No framework, no build step, no third-party scripts. |
 | **Own server** | [`server/`](server/) | Runs the *same* `Code.gs` on Node. `runtime.mjs` implements the Google services it uses (SpreadsheetApp, DriveApp, MailApp…) on SQLite and files, so there is one backend to maintain. Adds what Apps Script can't: a Telegram webhook, an email/Telegram outbox with retries, password and Google sessions, nightly backups, a mirror of your team files repo, `hubctl`. |
 | **Demo** | [`docs/demo/`](docs/demo/) | `gas-fakes.js` (in-memory Google services), `demo-data.js` (a made-up team) and a copy of `Code.gs`. `?demo=1` runs the real backend inside the browser; `?demo=1&tour=1` is the guided tour. The tests use the same fakes. |
-| **Tests** | [`tests/`](tests/) | `node --test tests/*.test.mjs` — the real `Code.gs` against the fakes (`api`, `v45`), and the real server over HTTP (`server`, `v45`). |
+| **Inbox watcher** | [`apps-script/inbox-watcher.gs`](apps-script/inbox-watcher.gs) | Optional. A separate Apps Script in the city mailbox's own Google account: every 5 minutes it posts new emails (sender, subject, first lines, Gmail link) to `inbox.push` with the **feed key**. The hub never gets Gmail access. |
+| **Languages** | [`docs/js/i18n.js`](docs/js/i18n.js) | The words of the public page and the Apply page in each language (`LANGS` in Code.gs lists the codes the backend accepts). The dashboard is English. |
+| **Tests** | [`tests/`](tests/) | `node --test tests/*.test.mjs` — the real `Code.gs` against the fakes (`api`, `v45`, `v5`), and the real server over HTTP (`server`, `v45`, `v5`). |
 
 ## One request, start to end
 
@@ -50,10 +54,12 @@ On the server, `app.mjs` runs requests one at a time inside a SQLite transaction
 
 | Way | How it works |
 |---|---|
-| **Personal link** | `…/?hub=<id>&u=<key>&t=<32 hex>`. The website stores the key per hub and removes it from the address bar. Reset = a new token; the old link dies. |
+| **Single-use invite** (`signin_mode=invite`, the default for new hubs) | `…/?hub=<id>#/invite?k=<40 hex>` — a row in the `Invites` tab (`code, key, created_at, expires_at, used_at, used_how, by`). `invite.check` says who it is for; `invite.claim` uses it up **in one step** with the chosen way: `device` (the browser gets the person's key; on the server an `hs_` session), `google` (binds the Google account), or `password` (own server: makes the account; a failed invite rolls the new account back). A newer invite marks older open ones `replaced`. Messages, reminders and the bot never carry a key in this mode. |
+| **Personal link** (`signin_mode=link`, hubs from before v5) | `…/?hub=<id>&u=<key>&t=<32 hex>`. The website stores the key per hub and removes it from the address bar. Reset = a new token; the old link dies. |
 | **Password** (own server) | `accounts.mjs`: scrypt hashes, 5 wrong tries = 15-minute lock, sessions `hs_…` stored only as SHA-256. Making a password switches the person's links off. An admin can send a one-time **reset link** (`#/reset?k=…`, 24 h, hash stored). |
 | **Google** | `docs/js/google.js` sends the browser to `accounts.google.com` (OpenID Connect, `response_type=id_token`, a random `state` + `nonce`) and reads the ID token from the returned address. The hub then checks it: **Apps Script** asks Google's `tokeninfo`; **the server** checks the RS256 signature against Google's published keys (`server/google.mjs`), plus `iss`, `aud`, `exp` and the single-use nonce. A person matches by their bound Google id, or by the verified email an admin saved in People. Not on the team → a 30-minute ticket that the join form uses (verified name + email). |
-| **Guest viewer** | A personal link with the `viewer` role: read-only, no proof, contacts or notes. |
+| **Guest viewer** | An invite or personal link with the `viewer` role: read-only, no proof, contacts or notes. |
+| **Feed key** | `FEED_KEY` script property (`fk_` + 64 hex), made and renewed by admins. Accepted by exactly two public actions, `inbox.push` and `signups.push`; compared by length and value. |
 
 Roles: `viewer` < `member` < `lead` < `admin` (`RANK` in Code.gs). The website only *shows* pages; the backend *enforces* every rule.
 
@@ -63,19 +69,22 @@ Roles: `viewer` < `member` < `lead` < `admin` (`RANK` in Code.gs). The website o
 |---|---|---|
 | People, tasks, settings… | Sheet tabs | the same tabs as JSON in SQLite (`sheets` table) |
 | Proof photos and files | private Drive folder | `data/files` (private) |
+| Uploads on Files | private Drive folder *"… — Team Hub files"*; a `Resources` row with `file`, `mime`, `size`, `preview` (a small data URL); handed out by `file.get` to whoever may see the tile | `data/files` (private), same rows |
+| Invites, signup counts, inbox | `Invites`, `Signups`, `Inbox` tabs | same tabs in SQLite |
 | Sponsor logos (public) | Drive folder shared *anyone with the link* — or, if the account forbids it, a small data URL in the Sheet | `data/files`, served at `/files/pub/<id>` |
 | Profile photos | a small data URL in the `photo` column (≤ 48 000 characters) | same |
 | Team files (posters, slides) | a public GitHub repo, listed through GitHub's API | a mirror in `data/team-repo`, served at `/files/raw/<path>` |
 | Bot token, group, secrets | Script properties | `props` table, `.env` (chmod 600) |
 | Passwords, sessions, reset links | — | `accounts`, `sessions`, `meta` tables (hashes only) |
 
-Exports (`Settings → Export all data`, the weekly email) leave out tokens, chat ids and Google ids.
+Exports (`Settings → Export all data`, the weekly email) leave out tokens, chat ids, Google ids and the `Invites` tab.
 
 ## Messages
 
 - **Reminders** (`eveningReminders`): every day at the reminder hour — tomorrow's and overdue tasks per person; a team summary for leads.
 - **Change alerts** (`tellChanges_` → `sendChanges_`): when a task is added, removed, moved or re-dated, its owner is told and every admin gets one summary saying who was told how. On the server they wait until nobody edited for a minute.
 - **Weekly report** (Sunday 19:00), **BLOCKED alerts**, **done alerts with photos**, **group posts**.
+- **Group feed** (each switchable): new signup counts (`recordSignups_`), new applications (first name + interest), new files and links (`feedFiles_`, and `feedRepo_` after the server pulls new files from the team repo). New emails go to leads (`inbox_alerts`).
 - `notify_(person, message)` picks Telegram or email from the person's choice. Apps Script sends at once; the server queues in the outbox (`outbox.mjs`) with backoff.
 
 ## The website

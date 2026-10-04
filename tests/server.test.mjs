@@ -41,7 +41,7 @@ async function boot(extra = {}) {
 }
 async function setUp(s) {
   const { code } = await s.hub.admin['setup-code']();
-  const r = await s.post({ action: 'setup', sheet: code, site: PUB, name: 'Ada Admin', email: 'ada@example.com', event: { name: 'Haven Test', city: 'Test', start: '2026-11-14', end: '2026-11-15', timezone: 'Asia/Tashkent' }, starter: false });
+  const r = await s.post({ action: 'setup', sheet: code, site: PUB, name: 'Ada Admin', email: 'ada@example.com', event: { name: 'Haven Test', city: 'Test', start: '2026-11-14', end: '2026-11-15', timezone: 'Asia/Tashkent' }, starter: false, invites: false });
   assert.equal(r.ok, true, r.error);
   return { u: r.key, t: r.token, link: r.link };
 }
@@ -113,7 +113,7 @@ test('import from a Google Sheet: one-time code, empty server only, tokens + bot
   // the Google side (Apps Script fakes) with a v4 hub in it
   const gas = createGas(); const g = loadBackend(CODE, gas);
   const sheet = 'https://docs.google.com/spreadsheets/d/' + gas._ss.getId() + '/edit';
-  const st = g.post({ action: 'setup', sheet, name: 'Azizbek', event: { name: 'Haven Tashkent', timezone: 'Asia/Tashkent', start: '2026-11-14', end: '2026-11-15' }, starter: true });
+  const st = g.post({ action: 'setup', sheet, name: 'Azizbek', event: { name: 'Haven Tashkent', timezone: 'Asia/Tashkent', start: '2026-11-14', end: '2026-11-15' }, starter: true, invites: false });
   const adm = { u: st.key, t: st.token };
   const lina = g.post(Object.assign({ action: 'person.add', person: { name: 'Lina', email: 'lina@example.com' } }, adm));
   const task = g.post(Object.assign({ action: 'task.add', task: { title: 'Poster', owner: lina.person.key, due: '2026-10-20' } }, adm)).task;
@@ -197,7 +197,7 @@ test('website on GitHub Pages, server does the work: CORS for the site only, lin
   assert.equal(pre.status, 204); assert.match(pre.headers.get('access-control-allow-methods'), /POST/);
   // import from the Google Sheet → links point at the GitHub site with ?hub=tashkent
   const gas = createGas(); const g = loadBackend(CODE, gas);
-  const st = g.post({ action: 'setup', sheet: 'https://docs.google.com/spreadsheets/d/' + gas._ss.getId() + '/edit', name: 'Azizbek', event: { name: 'Haven Tashkent', timezone: 'Asia/Tashkent', start: '2026-11-14', end: '2026-11-15' }, starter: false });
+  const st = g.post({ action: 'setup', sheet: 'https://docs.google.com/spreadsheets/d/' + gas._ss.getId() + '/edit', name: 'Azizbek', event: { name: 'Haven Tashkent', timezone: 'Asia/Tashkent', start: '2026-11-14', end: '2026-11-15' }, starter: false, invites: false });
   const { code } = await s.hub.admin['import-code']();
   const start = await s.post({ code, bundle: g.call('moveBundle_') }, '/admin/import');
   const fin = await s.post({ code, importId: start.importId }, '/admin/import/finish');
@@ -216,7 +216,7 @@ test('moving a hub from the shared site to its own domain: set-setting rebuilds 
   const SITE = 'https://notazizelse.github.io/haven-hub';
   const s = await boot({ env: { SITE_URL: SITE, HUB_NAME: 'tashkent', ALLOWED_ORIGINS: 'https://notazizelse.github.io' } });
   const gas = createGas(); const g = loadBackend(CODE, gas);
-  const st = g.post({ action: 'setup', sheet: 'https://docs.google.com/spreadsheets/d/' + gas._ss.getId() + '/edit', name: 'Ada', event: { name: 'Haven Test', timezone: 'Asia/Tashkent', start: '2026-11-14', end: '2026-11-15' }, starter: false });
+  const st = g.post({ action: 'setup', sheet: 'https://docs.google.com/spreadsheets/d/' + gas._ss.getId() + '/edit', name: 'Ada', event: { name: 'Haven Test', timezone: 'Asia/Tashkent', start: '2026-11-14', end: '2026-11-15' }, starter: false, invites: false });
   const { code } = await s.hub.admin['import-code']();
   const start = await s.post({ code, bundle: g.call('moveBundle_') }, '/admin/import');
   assert.equal((await s.post({ code, importId: start.importId }, '/admin/import/finish')).ok, true);

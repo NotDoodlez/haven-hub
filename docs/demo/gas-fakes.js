@@ -101,7 +101,7 @@ export function createGas(opts = {}) {
     const id = 'folder' + (++fileSeq), f = { id, name, getId: () => id, getUrl: () => 'https://drive.google.com/drive/folders/' + id,
       getFiles: () => iter(Object.values(files).filter(x => x.getParents().next() === f)),
       setSharing() { return this; },
-      createFile(b) { const fid = 'file' + (++fileSeq) + 'x'.repeat(20); let desc = ''; const file = { getId: () => fid, getName: () => b.getName(), getBlob: () => b, setDescription(d) { desc = d; return this; }, getDescription: () => desc, getParents: () => iter([f]), setSharing() { return this; } }; files[fid] = file; return file; } };
+      createFile(b) { const fid = 'file' + (++fileSeq) + 'x'.repeat(20); let desc = ''; const file = { getId: () => fid, getName: () => b.getName(), getBlob: () => b, setDescription(d) { desc = d; return this; }, getDescription: () => desc, getParents: () => iter([f]), setSharing() { return this; }, setTrashed(t) { if (t) delete files[fid]; return this; } }; files[fid] = file; return file; } };
     folders[id] = f; return f;
   };
 

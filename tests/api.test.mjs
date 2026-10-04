@@ -15,7 +15,7 @@ function fresh(opts) {
 function setupHub(opts = {}) {
   const h = fresh(opts);
   const r = h.be.post({ action: 'setup', sheet: h.sheet, hub: HUB, name: 'Ada Lovelace', email: 'ada@example.com',
-    event: { name: 'Haven Springfield', city: 'Springfield', start: '2026-11-14', end: '2026-11-15', timezone: 'Asia/Tashkent' }, starter: opts.starter !== false });
+    event: { name: 'Haven Springfield', city: 'Springfield', start: '2026-11-14', end: '2026-11-15', timezone: 'Asia/Tashkent' }, starter: opts.starter !== false, invites: !!opts.invites });
   assert.equal(r.ok, true, r.error);
   h.admin = { t: r.token, u: r.key };
   h.as = (who, body) => h.be.post(Object.assign({}, body, who));
@@ -28,14 +28,14 @@ const future = days => new Date(Date.now() + days * 864e5).toISOString().slice(0
 test('ping before setup says not ready', () => {
   const { be } = fresh();
   const r = be.get({ action: 'ping' });
-  assert.equal(r.ok, true); assert.equal(r.ready, false); assert.match(r.version, /^4./);
+  assert.equal(r.ok, true); assert.equal(r.ready, false); assert.match(r.version, /^5\./);
 });
 
 test('setup: wrong sheet rejected, right sheet works, second setup rejected', () => {
   const h = fresh();
   const bad = h.be.post({ action: 'setup', sheet: 'https://docs.google.com/spreadsheets/d/1SomeoneElsesSheet000000000000/edit', name: 'X', event: { name: 'Haven X', timezone: 'Europe/London' } });
   assert.equal(bad.ok, false); assert.equal(bad.code, 'proof');
-  const ok = h.be.post({ action: 'setup', sheet: h.sheet, hub: HUB, name: 'Ada', email: 'ada@example.com', event: { name: 'Haven X', timezone: 'Europe/London', start: '2026-11-14', end: '2026-11-15' } });
+  const ok = h.be.post({ action: 'setup', sheet: h.sheet, hub: HUB, name: 'Ada', email: 'ada@example.com', invites: false, event: { name: 'Haven X', timezone: 'Europe/London', start: '2026-11-14', end: '2026-11-15' } });
   assert.equal(ok.ok, true, ok.error);
   assert.match(ok.link, /\?hub=AKfy.*&u=ada&t=[0-9a-f]{32}$/);
   assert.equal(ok.emailed, true);
@@ -271,7 +271,7 @@ test('telegram: token saved from the dashboard, /start connects, group report wo
 test('reminders + weekly report go to the right channel', () => {
   const h = setupHub({ starter: false });
   const a = h.addPerson({ name: 'Ann', email: 'ann@example.com' });
-  const tomorrow = new Date(Date.now() + 864e5 + 3600e3).toLocaleString('sv-SE', { timeZone: 'Asia/Tashkent' }).slice(0, 10);
+  const tomorrow = new Date(Date.now() + 864e5).toLocaleString('sv-SE', { timeZone: 'Asia/Tashkent' }).slice(0, 10); // the same "tomorrow" as Code.gs (it was flaky near midnight in Tashkent)
   h.as(h.admin, { action: 'task.add', task: { title: 'Due soon', owner: a.key, due: tomorrow + ' 23:00' } });
   h.as(h.admin, { action: 'task.add', task: { title: 'Late one', owner: a.key, due: '2020-01-01 10:00' } });
   const n = h.gas._mails.length;

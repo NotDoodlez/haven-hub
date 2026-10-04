@@ -1,6 +1,7 @@
 /* First-run wizard: copy the Sheet → deploy → paste the URL → prove it's your Sheet → name the event → dashboard. */
 import { $, esc, icon, toast, busy, field, formValues, copy, store, zones, browserTz } from '../ui.js';
 import { hubFrom, getFrom, postTo, DEMO, DEMO_HUB, SELF, demoSheetUrl, siteUrl } from '../api.js';
+import { NAMES } from '../i18n.js';
 
 const STEPS = ['Copy', 'Deploy', 'Prove', 'Event', 'Create'];
 /** Code.gs of the repo this website comes from (a fork pastes its own). */
@@ -8,7 +9,7 @@ const RAW = String((window.HUB_CONFIG && window.HUB_CONFIG.repo) || (window.HUB_
 let st = null;
 
 export function setup(root, ctx) {
-  st = st || Object.assign({ step: 1, url: '', hub: '', sheet: '', ev: { name: '', city: '', start: '2026-11-14', end: '2026-11-15', timezone: browserTz(), signup: '' }, name: '', role: 'Lead organizer', email: '', starter: true, publicPage: true, joinForm: true, done: null }, store.json('hh:wiz', {}));
+  st = st || Object.assign({ step: 1, url: '', hub: '', sheet: '', ev: { name: '', city: '', start: '2026-11-14', end: '2026-11-15', timezone: browserTz(), signup: '' }, name: '', role: 'Lead organizer', email: '', starter: true, publicPage: true, joinForm: true, invites: true, langs: ['en'], done: null }, store.json('hh:wiz', {}));
   if (DEMO) { st.url = st.url || 'https://script.google.com/macros/s/' + DEMO_HUB + '/exec'; st.sheet = st.sheet || demoSheetUrl(); }
   if (SELF) { st.hub = 'self'; if (st.step < 3) st.step = 3; }
   document.title = 'Set up Haven Hub';
@@ -54,6 +55,10 @@ export function setup(root, ctx) {
     <form id="f5">${field({ label: 'Add the Haven starter checklist', name: 'starter', type: 'toggle', value: st.starter, hint: '13 tasks (venue in writing, adults, parent guide, budget to HQ, ship check…), team rules and milestones — all assigned to you, with dates counted back from the event. Edit or delete freely.' })}
       ${field({ label: 'Public event page', name: 'publicPage', type: 'toggle', value: st.publicPage, hint: 'Your hub link shows a countdown, your signup link and progress. Team names stay hidden unless you turn them on.' })}
       ${field({ label: '“Join the team” form', name: 'joinForm', type: 'toggle', value: st.joinForm, hint: 'On the public page. Answers land in Dashboard → Applications.' })}
+      ${field({ label: 'Single-use invites (recommended)', name: 'invites', type: 'toggle', value: st.invites !== false, hint: 'Each organizer gets an invite that works once: they open it and pick Google, a password (own server) or “just this device”. A forwarded message lets nobody in. Off = a personal link that always works, like Haven Hub v4.' })}
+      <div class="form-grid">${field({ label: 'Main language of the public + Apply pages', name: 'lang_main', type: 'select', value: (st.langs || ['en'])[0], options: Object.keys(NAMES).map(k => [k, NAMES[k]]) })}
+        <div class="field"><span class="flabel">Also in</span><div class="radio-row chk">${Object.keys(NAMES).map(k => `<label><input type="checkbox" name="lang_also" value="${k}" data-multi="1" ${(st.langs || []).slice(1).includes(k) ? 'checked' : ''}> ${esc(NAMES[k])}</label>`).join('')}</div></div></div>
+      <p class="small muted" style="margin-top:-6px">The dashboard is in English. Want another language on the public page? Add it to <code>docs/js/i18n.js</code> — <a href="${esc(repo)}/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener">how</a>.</p>
       <div class="card" style="background:#FFFCF8"><b>${esc(st.ev.name)}</b> · ${esc(st.ev.city)} · ${esc(st.ev.start)} → ${esc(st.ev.end)} · ${esc(st.ev.timezone)}<br><span class="muted small">Admin: ${esc(st.name)}${st.email ? ' · ' + esc(st.email) : ''}</span></div>
       <div id="cerr"></div><div class="row"><button class="btn ghost" type="button" data-back>Back</button><button class="btn accent lg" type="submit">${icon('zap')} Create my hub</button></div></form>`;
 
@@ -98,9 +103,10 @@ export function setup(root, ctx) {
   const f5 = $('#f5');
   if (f5) f5.onsubmit = async e => {
     e.preventDefault(); const v = formValues(f5), b = f5.querySelector('[type=submit]');
-    Object.assign(st, { starter: v.starter, publicPage: v.publicPage, joinForm: v.joinForm }); save();
+    const also = [].concat(v.lang_also || []).filter(Boolean), langs = [v.lang_main || 'en'].concat(also.filter(l => l !== v.lang_main));
+    Object.assign(st, { starter: v.starter, publicPage: v.publicPage, joinForm: v.joinForm, invites: v.invites, langs }); save();
     busy(b, true, 'Creating your hub…');
-    const r = await postTo(st.hub, 'setup', { sheet: st.sheet, hub: st.hub, site: siteUrl(), name: st.name, role: st.role, email: st.email, event: st.ev, starter: st.starter, publicPage: st.publicPage, joinForm: st.joinForm });
+    const r = await postTo(st.hub, 'setup', { sheet: st.sheet, hub: st.hub, site: siteUrl(), name: st.name, role: st.role, email: st.email, event: st.ev, starter: st.starter, publicPage: st.publicPage, joinForm: st.joinForm, invites: st.invites !== false, languages: st.langs.join(',') });
     busy(b, false);
     if (!r.ok) { $('#cerr').innerHTML = `<div class="banner bad">${icon('alert')}<div>${esc(r.error)}${r.code === 'proof' ? ' <a href="#" id="back3">Fix the Sheet address</a>' : ''}</div></div>`; const b3 = $('#back3'); if (b3) b3.onclick = ev => { ev.preventDefault(); go(3); }; return; }
     store.set('hh:s:' + st.hub, JSON.stringify({ u: r.key, t: r.token })); store.set('hh:last', st.hub);
@@ -119,12 +125,12 @@ function manual() {
 function success(root, ctx) {
   const r = st.done, open = DEMO || SELF ? '#/admin' : `?hub=${encodeURIComponent(st.hub)}#/admin`;
   root.innerHTML = `<div class="wiz"><div class="card" style="text-align:center;padding:28px 22px"><img src="assets/daven.png" alt="" width="150" height="103"><h1 style="font-size:30px;margin:8px 0">Your hub is ready!</h1>
-    <p class="muted">This is <b>your admin link</b>. It is your key to the hub — bookmark it and don't share it.${r.emailed ? ' We also emailed it to you.' : ''}</p>
+    <p class="muted">${r.invites ? `You're signed in on this browser. Below is <b>your admin link</b> — your key to the hub. Keep it somewhere safe (a password manager) and don't share it.${r.emailed ? ' For your other devices we emailed you an invite that works once.' : ''}` : `This is <b>your admin link</b>. It is your key to the hub — bookmark it and don't share it.${r.emailed ? ' We also emailed it to you.' : ''}`}</p>
     <div class="linkbox" style="max-width:560px;margin:0 auto 14px"><input readonly value="${esc(r.link)}" aria-label="Admin link"><button class="btn soft" id="cl">${icon('copy')} Copy</button></div>
     ${r.warning ? `<div class="banner" style="text-align:left">${icon('alert')}<div>${esc(r.warning)}</div></div>` : ''}
     <a class="btn accent lg" href="${esc(open)}">Open my dashboard ${icon('external')}</a></div>
     <div class="card"><h3 style="margin-bottom:10px">Next steps</h3><ol class="how">
-      <li><b>Add your team</b> — Dashboard → People → Add organizer. Each person gets a personal link.</li>
+      <li><b>Add your team</b> — Dashboard → People → Add organizer. ${r.invites ? 'Each person gets an invite that works once, then signs in their own way (Settings → Sign-in to change this).' : 'Each person gets a personal link.'}</li>
       <li><b>Reminders</b> — they're on (email). For Telegram: Settings → Telegram bot (optional, 3 minutes).</li>
       <li><b>Share your public page</b> — Settings → Public page → copy the link for your bio and posters.</li>
       <li>Lost your link? In your Sheet: <b>Haven Hub → Show admin links</b>.</li></ol></div></div>`;

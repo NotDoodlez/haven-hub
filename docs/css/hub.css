@@ -680,3 +680,38 @@ body.touring .content, body.touring .pub-main { padding-bottom: 260px; }
   .facts-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .show-nav a:not(.btn) { display: none; }
 }
+
+/* v5: languages, Apply page, Inbox, signups, uploads */
+.flabel { font-weight: 800; font-size: 13px; color: var(--umber); }
+.radio-row.chk { gap: 8px; }
+.radio-row.chk label { font-weight: 600; padding: 7px 11px; }
+.lang-sw { display: inline-flex; border: 1px solid var(--line); border-radius: 99px; padding: 2px; gap: 2px; background: #fff; }
+.lang-sw button { border: 0; background: transparent; font: 800 12px var(--font); color: var(--muted); padding: 5px 10px; border-radius: 99px; cursor: pointer; }
+.lang-sw button.on { background: var(--umber); color: #fff; }
+.hero .lang-sw { background: rgba(0, 0, 0, .18); border-color: rgba(255, 255, 255, .45); }
+.hero .lang-sw button { color: #fff; }
+.hero .lang-sw button.on { background: #fff; color: var(--umber); }
+.apply-top { flex-wrap: wrap; }
+.join-card .actions { margin-top: 10px; }
+.mail-list { list-style: none; margin: 0; padding: 0; }
+.mail { padding: 14px 20px; border-bottom: 1px solid var(--line); }
+.mail:last-child { border-bottom: 0; }
+.mail.new { border-left: 4px solid var(--carrot); padding-left: 16px; }
+.mail.done, .mail.ignored { opacity: .78; }
+.mail-h { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.mail-h .t { margin-left: auto; }
+.mail-s { font-weight: 800; margin: 3px 0 2px; overflow-wrap: anywhere; }
+.mail-p { overflow-wrap: anywhere; margin-bottom: 8px; }
+.su-row { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; justify-content: space-between; }
+.spark { width: 220px; max-width: 100%; height: 56px; }
+.ftile.up .fmeta { overflow-wrap: anywhere; }
+body.loading, body.loading * { cursor: progress !important; }
+@media (max-width: 700px) { .mail { padding: 12px 14px; } .spark { width: 100%; } }
+.g-row .gbtn { max-width: 100%; white-space: normal; text-align: left; }
+@media (max-width: 480px) { .g-row .gbtn { width: 100%; justify-content: center; } }
+@media (max-width: 480px) {
+  .hero-top img { width: 96px; }
+  .hero-top .row { flex-direction: column; align-items: flex-end; gap: 8px; }
+  .lang-sw button { padding: 5px 8px; font-size: 11.5px; }
+  .hero .btn { white-space: normal; text-align: center; max-width: 100%; }
+}

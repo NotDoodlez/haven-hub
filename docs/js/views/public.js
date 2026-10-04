@@ -1,14 +1,16 @@
-/* Public event page (hub link without a personal link), the organizer sign-in page and the "choose a new password" page. */
+/* Public event page (hub link without a sign-in) in the hub's languages, the Apply page (#/apply), the single-use invite page (#/invite?k=…),
+   the organizer sign-in page and the "choose a new password" page. */
 import { $, esc, icon, toast, busy, fmtDay, parseLocal, bar, skeleton, safeUrl, safeImg, formValues, googleG } from '../ui.js';
 import { parseLink, googleClient } from '../api.js';
 import { googleStart } from '../google.js';
+import { tr, langsOf, pickLang, setLang, textIn, langSwitch, INTERESTS, FREE, stored } from '../i18n.js';
 
 let timer = null;
-const INTERESTS = ['Design & posters', 'Social media & video', 'Schools & outreach', 'Sponsors & partners', 'Tech & website', 'Event weekend help', 'Mentoring (19+)', 'Something else'];
 
-function dates(ev) {
-  const year = String(ev.end || ev.start).slice(0, 4);
-  return ev.end && ev.end !== ev.start ? `${fmtDay(ev.start)} – ${fmtDay(ev.end)} ${year}` : `${fmtDay(ev.start)} ${year}`;
+function dates(ev, lang) {
+  const year = String(ev.end || ev.start).slice(0, 4), loc = { uz: 'uz-UZ', ru: 'ru-RU' }[lang];
+  const day = d => loc ? new Date(String(d).slice(0, 10) + 'T12:00:00Z').toLocaleDateString(loc, { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }) : fmtDay(d);
+  return ev.end && ev.end !== ev.start ? `${day(ev.start)} – ${day(ev.end)} ${year}` : `${day(ev.start)} ${year}`;
 }
 /** "Supported by": one grid of logo tiles in the admin's order, each saying what kind of help it is and linking to the sponsor. */
 export function sponsorWall(list) {
@@ -21,17 +23,21 @@ export function sponsorWall(list) {
 }
 const gButton = (id, label) => `<button type="button" class="btn gbtn lg" id="${id}">${googleG} ${esc(label)}</button>`;
 const startGoogle = (ctx, cid, purpose, back) => { if (ctx.api.DEMO) return toast('Google sign-in is switched off in the demo.', 'err'); if (!googleStart(cid, purpose, { back })) toast('Your browser blocked this — allow cookies/storage for this site and try again.', 'err'); };
+const wireLang = (root, again) => root.querySelectorAll('[data-lang]').forEach(b => { b.onclick = () => { setLang(b.dataset.lang); again(); }; });
+const HC = '<a href="https://hackclub.com" target="_blank" rel="noopener">Hack Club</a>';
 
-export async function publicPage(root, ctx, opts = {}) {
+export async function publicPage(root, ctx) {
   clearInterval(timer);
   root.innerHTML = `<div class="wiz">${skeleton(3)}</div>`;
   const P = await ctx.api.getPublic('public');
   if (!P.ok && P.code === 'not_ready') return notReady(root);
   if (!P.version) return signin(root, ctx, { error: P.ok === false && P.code === 'network' ? P.error : '', old: !P.code });
-  const ev = P.event, L = P.links || {}, tz = P.tz, cid = googleClient(P), g = ctx.google;
+  const avail = langsOf(P), lang = pickLang(avail), t = tr(lang);
+  const ev = P.event, L = P.links || {}, tz = P.tz;
   document.title = ev.name + ' — Hack Club Haven';
+  document.documentElement.lang = lang;
   const cta = [
-    safeUrl(L.signup) && `<a class="btn accent lg" href="${esc(safeUrl(L.signup))}" target="_blank" rel="noopener">${icon('zap')} Sign up to take part</a>`,
+    safeUrl(L.signup) && `<a class="btn accent lg" href="${esc(safeUrl(L.signup))}" target="_blank" rel="noopener">${icon('zap')} ${esc(t('signup'))}</a>`,
     safeUrl(L.instagram) && `<a class="btn ghost" href="${esc(safeUrl(L.instagram))}" target="_blank" rel="noopener">Instagram</a>`,
     safeUrl(L.telegram) && `<a class="btn ghost" href="${esc(safeUrl(L.telegram))}" target="_blank" rel="noopener">Telegram</a>`,
     safeUrl(L.website) && `<a class="btn ghost" href="${esc(safeUrl(L.website))}" target="_blank" rel="noopener">Website</a>`,
@@ -39,70 +45,146 @@ export async function publicPage(root, ctx, opts = {}) {
   ].filter(Boolean).join('');
   let main = '';
   if (P.enabled) {
-    const pr = P.progress, pct = pr && pr.total ? Math.round(100 * pr.done / pr.total) : 0;
+    const pr = P.progress, pct = pr && pr.total ? Math.round(100 * pr.done / pr.total) : 0, su = P.signups;
     const left = [];
-    if (P.sponsors && P.sponsors.length) left.push(`<div class="card sp-card"><div class="card-h"><h3>Supported by</h3><span class="sub">thank you for making ${esc(ev.name)} possible</span></div>${sponsorWall(P.sponsors)}</div>`);
-    if (pr) left.push(`<div class="card"><div class="card-h"><h3>Getting ready</h3><span class="sub">the organizing team's checklist</span></div>
-      <div class="row" style="align-items:flex-end;gap:14px;margin-bottom:10px"><span class="big-pct">${pct}%</span><span class="muted" style="padding-bottom:6px">${pr.done} of ${pr.total} tasks done</span></div>${bar(pct)}
+    if (su) left.push(`<div class="card"><div class="card-h"><h3>${esc(t('signups'))}</h3><span class="sub">${esc(t('signupsSub'))}</span></div>
+      <div class="row" style="align-items:flex-end;gap:14px;margin-bottom:10px"><span class="big-pct">${esc(su.total)}</span>${su.goal ? `<span class="muted" style="padding-bottom:6px">${esc(t('ofGoal', { goal: su.goal }))}</span>` : ''}</div>${su.goal ? bar(100 * su.total / su.goal) : ''}</div>`);
+    if (P.sponsors && P.sponsors.length) left.push(`<div class="card sp-card"><div class="card-h"><h3>${esc(t('supported'))}</h3><span class="sub">${esc(t('supportedSub', { event: ev.name }))}</span></div>${sponsorWall(P.sponsors)}</div>`);
+    if (pr) left.push(`<div class="card"><div class="card-h"><h3>${esc(t('ready'))}</h3><span class="sub">${esc(t('readySub'))}</span></div>
+      <div class="row" style="align-items:flex-end;gap:14px;margin-bottom:10px"><span class="big-pct">${pct}%</span><span class="muted" style="padding-bottom:6px">${esc(t('tasksDone', { done: pr.done, total: pr.total }))}</span></div>${bar(pct)}
       ${pr.milestones.length ? `<ul class="mile-list" style="margin-top:12px">${pr.milestones.map(m => `<li><span class="mk ${m.done ? 'done' : ''}">${icon(m.done ? 'check' : 'flag')}</span><div><b>${esc(m.label)}</b><div class="small muted">${esc(fmtDay(m.date))}</div></div></li>`).join('')}</ul>` : ''}</div>`);
     if (P.team && P.team.length) left.push(`<div class="card"><div class="card-h"><h3>The team</h3><span class="sub">${P.team.length} teenagers making it happen</span></div><div class="cards" style="grid-template-columns:repeat(auto-fill,minmax(150px,1fr))">${P.team.map(p => `<div><b>${esc(p.name)}</b><div class="small muted">${esc(p.role || p.area || '')}</div></div>`).join('')}</div></div>`);
-    left.push(`<div class="card"><div class="card-h"><h3>What is Haven?</h3></div><p>Haven is a <a href="https://hackclub.com" target="_blank" rel="noopener">Hack Club</a> programme: teen-run game jams in cities around the world, on the same weekend. You build a video game in two days and ship it for everyone to play.</p>
-      <p class="muted" style="margin:0">For ages 13–18. No experience needed. <a href="https://haven.hackclub.com" target="_blank" rel="noopener">haven.hackclub.com</a></p></div>`);
-    const join = P.join ? `<form class="card" id="join"><div class="card-h"><div><h3>Join the organizing team</h3><div class="sub">${esc(P.join.intro || '')}</div></div></div>
-      ${g && g.ticket ? `<div class="banner info">${icon('check')}<div>Google confirmed it's you: <b>${esc(g.name || '')}</b>${g.email ? ' · ' + esc(g.email) : ''}. Fill in the rest and press Send. <button type="button" class="linkbtn" id="g-forget">Not you?</button></div></div>`
-        : cid ? `<div class="g-row">${gButton('g-join', 'Sign up with Google')}<span class="small muted">fills in your name and email — or type them below</span></div>` : ''}
-      <div class="form-grid"><div class="field"><label for="j-n">Your name <span class="req">*</span></label><input id="j-n" name="name" required maxlength="60" value="${esc(g && g.name || '')}"></div>
-      <div class="field"><label for="j-c">Telegram @username${g && g.email ? ' (optional)' : ' or email'} ${g && g.email ? '' : '<span class="req">*</span>'}</label><input id="j-c" name="contact" ${g && g.email ? '' : 'required'} maxlength="80" placeholder="@username"></div></div>
-      <div class="field"><span style="font-weight:800;font-size:13px;color:var(--umber)">Your age <span class="req">*</span></span><div class="radio-row"><label><input type="radio" name="age_group" value="13-18"> 13–18</label><label><input type="radio" name="age_group" value="19+"> 19 or older</label></div>
-        <small class="hint" id="agehint"></small></div>
-      <div class="field"><label for="j-i">I'd like to help with</label><select id="j-i" name="interest">${INTERESTS.map(i => `<option>${esc(i)}</option>`).join('')}</select></div>
-      <div class="field"><label for="j-t">Anything else? (optional)</label><textarea id="j-t" name="note" maxlength="1000" rows="3" placeholder="Skills, school, when you're free…"></textarea></div>
-      <div class="hp" aria-hidden="true"><label>Company <input name="company" tabindex="-1" autocomplete="off"></label></div>
-      <p class="small muted">We only use this to contact you about helping. It goes to the organizers — nowhere else.</p>
-      <button class="btn primary" type="submit">${icon('send')} Send</button><div id="jout" style="margin-top:10px"></div></form>` : '';
-    main = `<div class="grid-2" style="align-items:start"><div class="stack">${left.join('')}</div><div class="stack">${join || ''}
-      <div class="card"><h3 style="margin-bottom:6px">Organizer?</h3><p class="muted">Sign in${cid ? ' with Google, a password' : ''} or open the personal link your lead sent you.</p><a class="btn ghost" href="#/signin">${icon('user')} Organizer sign-in</a></div></div></div>`;
+    left.push(`<div class="card"><div class="card-h"><h3>${esc(t('whatIs'))}</h3></div><p>${esc(t('whatIsText', { hc: '%HC%' })).replace('%HC%', HC)}</p>
+      <p class="muted" style="margin:0">${esc(t('whatIsAges'))} <a href="https://haven.hackclub.com" target="_blank" rel="noopener">haven.hackclub.com</a></p></div>`);
+    const join = P.join ? `<div class="card join-card"><h3 style="margin-bottom:6px">${esc(t('joinTitle'))}</h3><p class="muted">${esc(introIn(P, lang) || t('applyLede'))}</p>
+      <a class="btn primary" href="#/apply">${icon('userPlus')} ${esc(t('joinBtn'))}</a></div>` : '';
+    main = `<div class="grid-2" style="align-items:start"><div class="stack">${left.join('')}</div><div class="stack">${join}
+      <div class="card"><h3 style="margin-bottom:6px">${esc(t('organizer'))}</h3><p class="muted">${esc(t('organizerText'))}</p><a class="btn ghost" href="#/signin">${icon('user')} ${esc(t('organizerBtn'))}</a></div></div></div>`;
   } else {
-    main = `<div class="card" style="max-width:560px;margin:0 auto"><h3>Organizer?</h3><p class="muted">This is the ${esc(ev.name)} team hub. Open your personal link, or sign in.</p><a class="btn primary" href="#/signin">Organizer sign-in</a></div>`;
+    main = `<div class="card" style="max-width:560px;margin:0 auto"><h3>${esc(t('organizer'))}</h3><p class="muted">${esc(t('organizerText'))}</p><a class="btn primary" href="#/signin">${esc(t('organizerBtn'))}</a></div>`;
   }
   const shared = (ctx.cfg.sharedSite || 'https://notazizelse.github.io/haven-hub').replace(/\/+$/, '');
+  const tagline = textIn(ev.taglines, lang, ev.tagline);
   root.innerHTML = `<div class="pub"><header class="hero"><div class="hero-in">
-      <div class="hero-top"><img src="assets/logo-white.png" alt="Hack Club Haven" width="132" height="84"><a class="btn ghost sm" href="#/signin">${icon('user')} Organizers</a></div>
+      <div class="hero-top"><img src="assets/logo-white.png" alt="Hack Club Haven" width="132" height="84"><div class="row">${langSwitch(avail, lang)}<a class="btn ghost sm" href="#/signin">${icon('user')} ${esc(t('organizers'))}</a></div></div>
       <h1>${esc(ev.name)}</h1>
-      <div class="when">${icon('calendar')} ${esc(dates(ev))}${ev.city ? ` <span>· ${esc(ev.city)}</span>` : ''}</div>
-      ${ev.tagline ? `<p class="tagline">${esc(ev.tagline)}</p>` : ''}
+      <div class="when">${icon('calendar')} ${esc(dates(ev, lang))}${ev.city ? ` <span>· ${esc(ev.city)}</span>` : ''}</div>
+      ${tagline ? `<p class="tagline">${esc(tagline)}</p>` : ''}
       <div class="countdown" id="cd" aria-live="off"></div>
       <div class="row">${cta}</div></div></header>
     <main class="pub-main">${main}</main>
     <footer class="pub-foot">${esc(ev.name)} is part of <a href="https://haven.hackclub.com" target="_blank" rel="noopener">Hack Club Haven</a> · organized with <a href="${esc(shared)}/#/about" target="_blank" rel="noopener">Haven Hub</a> — <a href="${esc(shared)}/#/about" target="_blank" rel="noopener">run it for your Haven →</a> · <a href="privacy.html">Privacy</a></footer></div>`;
+  wireLang(root, () => publicPage(root, ctx));
   const start = parseLocal(ev.start + ' 09:00', tz), end = parseLocal((ev.end || ev.start) + ' 23:59', tz);
   const tick = () => {
     const el = $('#cd'); if (!el) return clearInterval(timer);
     const ms = start - Date.now();
-    if (ms <= 0) { el.innerHTML = Date.now() < end ? `<div><b>Live</b><span>happening now</span></div>` : ''; return; }
+    if (ms <= 0) { el.innerHTML = Date.now() < end ? `<div><b>${esc(t('live'))}</b><span>${esc(t('liveSub'))}</span></div>` : ''; return; }
     const d = Math.floor(ms / 864e5), h = Math.floor(ms % 864e5 / 36e5), m = Math.floor(ms % 36e5 / 6e4);
-    el.innerHTML = `<div><b>${d}</b><span>days</span></div><div><b>${h}</b><span>hours</span></div><div><b>${m}</b><span>minutes</span></div>`;
+    el.innerHTML = `<div><b>${d}</b><span>${esc(t('days'))}</span></div><div><b>${h}</b><span>${esc(t('hours'))}</span></div><div><b>${m}</b><span>${esc(t('minutes'))}</span></div>`;
   };
   tick(); timer = setInterval(tick, 30e3);
-  const jf = $('#join');
-  if (jf) {
-    const gj = $('#g-join'); if (gj) gj.onclick = () => startGoogle(ctx, cid, 'join', '#/join');
-    const gf = $('#g-forget'); if (gf) gf.onclick = () => { ctx.google = null; publicPage(root, ctx, { join: true }); };
-    jf.addEventListener('change', e => { if (e.target.name === 'age_group') $('#agehint').textContent = e.target.value === '19+' ? 'Hack Club rule: people 19+ can\'t organize or take part — but you can help as a mentor or volunteer. Send it anyway!' : ''; });
-    jf.onsubmit = async e => {
-      e.preventDefault();
-      const v = formValues(jf), b = jf.querySelector('[type=submit]');
-      if (!v.age_group) return toast('Choose your age group.', 'err');
-      if (g && g.ticket) v.ticket = g.ticket;
-      busy(b, true, 'Sending…');
-      const r = await ctx.api.postPublic('apply', v);
-      busy(b, false);
-      if (!r.ok) return toast(r.error, 'err');
-      ctx.google = null;
-      jf.innerHTML = `<div style="text-align:center"><img src="assets/daven.png" alt="" width="120" height="82"><h3>Thank you!</h3><p class="muted">${esc(r.message)}</p>${v.ticket ? '<p class="small muted">Once you are on the team, “Sign in with Google” takes you straight to your tasks.</p>' : ''}</div>`;
-    };
+}
+
+/** #/apply — "Join the organizing team" in the hub's languages. What is stored is the same whatever the language (English labels + the language used). */
+let draft = null;
+export async function applyPage(root, ctx) {
+  clearInterval(timer);
+  root.innerHTML = `<div class="wiz">${skeleton(3)}</div>`;
+  const P = await ctx.api.getPublic('public');
+  if (!P.ok && P.code === 'not_ready') return notReady(root);
+  const avail = langsOf(P), lang = pickLang(avail), t = tr(lang), ev = P.event || {}, g = ctx.google, cid = googleClient(P);
+  document.title = t('joinTitle') + ' — ' + (ev.name || 'Haven');
+  document.documentElement.lang = lang;
+  const top = `<div class="wiz-top apply-top"><a href="#/"><img src="assets/logo-orange.png" alt="Hack Club Haven" width="96" height="61"></a><div style="flex:1"><h1 style="font-size:26px">${esc(t('applyTitle', { event: ev.name || 'Haven' }))}</h1></div>${langSwitch(avail, lang)}</div>`;
+  if (!P.version || !P.join) {
+    root.innerHTML = `<div class="wiz" style="max-width:640px">${top}<div class="card"><p>${esc(P.version ? t('closed') : (P.error || 'This hub is not reachable right now.'))}</p><a href="#/">${esc(t('back'))}</a></div></div>`;
+    return wireLang(root, () => applyPage(root, ctx));
   }
-  if (opts.join && jf) jf.scrollIntoView();
+  const d = draft || {}, has = (k, v) => (d[k] || []).includes(v);
+  const box = (name, key, value, label) => `<label><input type="checkbox" name="${name}" value="${esc(value)}" data-multi="1" ${has(name, value) ? 'checked' : ''}> ${esc(label)}</label>`;
+  root.innerHTML = `<div class="wiz" style="max-width:640px">${top}
+    <form class="card" id="join" lang="${lang}"><p class="muted" style="margin-top:0">${esc(introIn(P, lang) || t('applyLede'))}</p>
+      ${g && g.ticket ? `<div class="banner info">${icon('check')}<div>${esc(t('googleOk', { name: g.name || g.email || '' }))} <button type="button" class="linkbtn" id="g-forget">${esc(t('notYou'))}</button></div></div>`
+        : cid ? `<div class="g-row">${gButton('g-join', t('google'))}<span class="small muted">${esc(t('googleHint'))}</span></div>` : ''}
+      <div class="form-grid"><div class="field"><label for="j-n">${esc(t('name'))} <span class="req">*</span></label><input id="j-n" name="name" required maxlength="60" autocomplete="name" value="${esc(d.name || (g && g.name) || '')}"></div>
+      <div class="field"><label for="j-c">${esc(g && g.email ? t('contactOpt') : t('contact'))} ${g && g.email ? '' : '<span class="req">*</span>'}</label><input id="j-c" name="contact" ${g && g.email ? '' : 'required'} maxlength="80" placeholder="@username" value="${esc(d.contact || '')}"></div></div>
+      <div class="field"><span class="flabel">${esc(t('age'))} <span class="req">*</span></span><div class="radio-row"><label><input type="radio" name="age_group" value="13-18" ${d.age_group === '13-18' ? 'checked' : ''}> ${esc(t('age1318'))}</label><label><input type="radio" name="age_group" value="19+" ${d.age_group === '19+' ? 'checked' : ''}> ${esc(t('age19'))}</label></div>
+        <small class="hint" id="agehint">${d.age_group === '19+' ? esc(t('age19hint')) : ''}</small></div>
+      <div class="field"><label for="j-s">${esc(t('school'))}</label><input id="j-s" name="school" maxlength="100" placeholder="${esc(t('schoolPh'))}" value="${esc(d.school || '')}"></div>
+      <div class="field"><span class="flabel">${esc(t('interests'))} <span class="req">*</span></span><div class="radio-row chk">${INTERESTS.map(k => box('interests', k, stored('i_', k), t('i_' + k))).join('')}</div></div>
+      <div class="field"><span class="flabel">${esc(t('free'))}</span><div class="radio-row chk">${FREE.map(k => box('availability', k, stored('f_', k), t('f_' + k))).join('')}</div></div>
+      <div class="field"><label for="j-t">${esc(t('note'))}</label><textarea id="j-t" name="note" maxlength="1000" rows="3" placeholder="${esc(t('notePh'))}">${esc(d.note || '')}</textarea></div>
+      <div class="hp" aria-hidden="true"><label>Company <input name="company" tabindex="-1" autocomplete="off"></label></div>
+      <p class="small muted">${esc(t('privacy'))}</p>
+      <button class="btn primary lg" type="submit">${icon('send')} ${esc(t('send'))}</button></form>
+    <p class="small muted" style="text-align:center"><a href="#/">${esc(t('back'))}</a></p></div>`;
+  const jf = $('#join');
+  wireLang(root, () => { draft = formValues(jf); applyPage(root, ctx); });
+  const gj = $('#g-join'); if (gj) gj.onclick = () => { draft = formValues(jf); startGoogle(ctx, cid, 'join', '#/apply'); };
+  const gf = $('#g-forget'); if (gf) gf.onclick = () => { ctx.google = null; draft = formValues(jf); applyPage(root, ctx); };
+  jf.addEventListener('change', e => { if (e.target.name === 'age_group') $('#agehint').textContent = e.target.value === '19+' ? t('age19hint') : ''; });
+  jf.onsubmit = async e => {
+    e.preventDefault();
+    const v = formValues(jf), b = jf.querySelector('[type=submit]');
+    if (!v.age_group) return toast(t('chooseAge'), 'err');
+    if (!(v.interests || []).length) return toast(t('chooseOne'), 'err');
+    v.lang = lang;
+    if (g && g.ticket) v.ticket = g.ticket;
+    busy(b, true, t('sending'));
+    const r = await ctx.api.postPublic('apply', v);
+    busy(b, false);
+    if (!r.ok) return toast(r.error, 'err');
+    ctx.google = null; draft = null;
+    const ch = safeUrl(P.join.channel);
+    jf.innerHTML = `<div style="text-align:center"><img src="assets/daven.png" alt="" width="120" height="82"><h3>${esc(t('thanks'))}</h3><p class="muted">${esc(r.dup ? t('dup') : t('thanksText'))}</p>
+      ${v.ticket ? `<p class="small muted">${esc(t('thanksGoogle'))}</p>` : ''}${ch ? `<a class="btn soft" href="${esc(ch)}" target="_blank" rel="noopener">${icon('send')} ${esc(t('thanksChannel'))}</a>` : ''}</div>`;
+  };
+}
+
+/** #/invite?k=… — a single-use invite: see who it is for, then choose how to sign in from now on. Using it signs this browser in; the invite is then used up. */
+/** The text above the join form: the hub's own words in this language — or, in a language the hub wrote nothing in, the translated standard text (one language per page). */
+const introIn = (P, lang) => (P.join.intros && P.join.intros[lang]) || (lang === 'en' ? P.join.intro : '');
+
+export async function invitePage(root, ctx) {
+  clearInterval(timer);
+  document.title = 'Your invite — Haven Hub';
+  const k = new URLSearchParams(location.hash.split('?')[1] || '').get('k') || '';
+  root.innerHTML = `<div class="wiz" style="max-width:560px">${skeleton(2)}</div>`;
+  const c = k ? await ctx.api.postPublic('invite.check', { k }) : { ok: false, error: 'This invite link is incomplete — copy the whole link from the message.' };
+  const top = `<div class="wiz-top"><a href="#/"><img src="assets/logo-orange.png" alt="Hack Club Haven" width="96" height="61"></a><h1 style="font-size:26px">${c.ok ? `Welcome, ${esc(c.first)}!` : 'Your invite'}</h1></div>`;
+  if (!c.ok) {
+    root.innerHTML = `<div class="wiz" style="max-width:560px">${top}<div class="banner bad">${icon('alert')}<div>${esc(c.error || 'This invite does not work.')}</div></div>
+      <div class="card">${ctx.api.session() ? `<p style="margin-top:0">This browser is already signed in.</p><a class="btn primary" href="#/">${icon('check')} Open the hub</a>` : `<p style="margin-top:0">Signed in before on another device? Use the same way here:</p><a class="btn primary" href="#/signin">${icon('user')} Sign in</a>`}</div></div>`;
+    return;
+  }
+  const s = ctx.api.session(), cid = googleClient({ google: c.google }), viewer = c.access === 'viewer';
+  root.innerHTML = `<div class="wiz" style="max-width:560px">${top}
+    <p class="lede">You're invited to the <b>${esc(c.event)}</b> Team Hub${viewer ? ' as a guest (read-only)' : ''}. Choose how you'll sign in from now on — this invite works <b>once</b>.</p>
+    ${s ? `<div class="banner">${icon('alert')}<div>This browser is signed in as someone already. Using the invite signs it in as <b>${esc(c.name)}</b> instead.</div></div>` : ''}
+    ${cid ? `<div class="card g-card"><h3 style="margin-bottom:6px">Sign in with Google <span class="pill ok">quickest</span></h3><p class="muted small">Pick your Google account once — after that, “Sign in with Google” works on any phone or computer.</p>${gButton('i-g', 'Continue with Google')}</div>` : ''}
+    ${c.password ? `<form class="card" id="i-pw" method="post" action="#"><h3 style="margin-bottom:10px">${cid ? 'Or make a username and password' : 'Make a username and password'}</h3>
+      <div class="field"><label for="i-u">Username</label><input id="i-u" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" required minlength="3" maxlength="30" placeholder="${esc(String(c.first || '').toLowerCase().normalize('NFKD').replace(/[^a-z0-9]/g, '') || 'yourname')}"><small class="hint">3–30 small letters, digits, dot, dash or underscore</small></div>
+      <div class="field"><label for="i-p">Password</label><input id="i-p" name="password" type="password" autocomplete="new-password" required minlength="8" maxlength="128"><small class="hint">8 or more characters — a short sentence works well</small></div>
+      <button class="btn ${cid ? 'soft' : 'primary'}" type="submit">${icon('key')} Make my account</button></form>` : ''}
+    <div class="card"><h3 style="margin-bottom:6px">Just this device</h3><p class="muted small">No account: this browser stays signed in. On another phone or computer you'll need a new invite${cid ? ' — or connect Google later in Profile' : c.password ? ' — or make a password later in Profile' : ''}.</p>
+      <button class="btn ${cid || c.password ? 'ghost' : 'primary'}" id="i-dev">${icon('phone')} Use this device</button></div>
+    <p class="small muted" style="text-align:center">Works until ${esc(c.expires)}. Not ${esc(c.first)}? Close this page — and tell whoever sent it.</p></div>`;
+  const done = r => {
+    if (!r.ok) return toast(r.error || 'That did not work — try again.', 'err');
+    ctx.api.setSession({ u: r.u, t: r.t }); ctx.D = null;
+    toast(`You're in, ${c.first}!${r.username ? ' Your username is ' + r.username + '.' : ''}`);
+    if (ctx.api.DEMO) { history.replaceState(null, '', location.pathname + location.search + '#/'); return ctx.refresh(); } // the demo lives in this page: a reload would start it over
+    location.hash = '#/'; location.reload();
+  };
+  const gb = $('#i-g'); if (gb) gb.onclick = () => startGoogle(ctx, cid, 'invite', '#/invite?k=' + k);
+  const pf = $('#i-pw');
+  if (pf) pf.onsubmit = async e => {
+    e.preventDefault(); const b = pf.querySelector('[type=submit]'); busy(b, true, 'Making your account…');
+    const r = await ctx.api.postPublic('invite.claim', { k, how: 'password', username: pf.username.value.trim().toLowerCase(), password: pf.password.value });
+    busy(b, false); if (!r.ok) pf.password.value = ''; done(r);
+  };
+  $('#i-dev').onclick = async e => { const b = e.currentTarget; busy(b, true, 'Signing in…'); const r = await ctx.api.postPublic('invite.claim', { k, how: 'device' }); busy(b, false); done(r); };
 }
 
 function notReady(root) {
@@ -114,22 +196,23 @@ export async function signin(root, ctx, opts = {}) {
   clearInterval(timer);
   document.title = 'Sign in — Haven Hub';
   const pw = ctx.api.hub() && ctx.api.isServerHub();
-  let cid = googleClient(null);
-  if (!cid && ctx.api.hub() && !pw) { const p = await ctx.api.getPublic('ping'); cid = googleClient(p); }
-  const miss = opts.miss;
+  const ping = ctx.api.hub() ? await ctx.api.getPublic('ping') : null, inv = !!(ping && ping.signin === 'invite');
+  const cid = googleClient(null) || googleClient(ping);
+  const miss = opts.miss, next = /^[\w/-]+$/.test(opts.next || '') ? opts.next : '';
   root.innerHTML = `<div class="wiz" style="max-width:520px"><div class="wiz-top"><a href="#/"><img src="assets/logo-orange.png" alt="Hack Club Haven" width="96" height="61"></a><h1 style="font-size:26px">Organizer sign-in</h1></div>
     ${opts.error ? `<div class="banner ${opts.password || opts.google ? 'info' : 'bad'}">${icon(opts.password || opts.google ? 'user' : 'alert')}<div>${esc(opts.error)}</div></div>` : ''}
     ${miss ? `<div class="banner">${icon('alert')}<div>${esc(miss.message || 'That Google account is not on the team yet.')} <a href="#/join">Apply to join with this Google account →</a></div></div>` : ''}
+    ${next && !opts.error ? `<div class="banner info">${icon('user')}<div>Sign in to open that page.</div></div>` : ''}
     ${opts.old ? `<div class="banner info">${icon('zap')}<div>This hub is being upgraded. Personal links keep working — open yours again in a few minutes.</div></div>` : ''}
     ${cid ? `<div class="card g-card"><h3 style="margin-bottom:6px">Sign in with Google</h3><p class="muted small">Works once your Google account is connected (Profile → Sign in with Google), or when your lead saved your Gmail address on the team.</p>${gButton('g-in', 'Sign in with Google')}</div>` : ''}
     ${pw ? `<form class="card" id="si0" method="post" action="#"><h3 style="margin-bottom:10px">${cid ? 'Or with your password' : 'Sign in'}</h3>
       <div class="field"><label for="si-u">Username or email</label><input id="si-u" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" required value="${esc(opts.google ? '' : opts.username || '')}"></div>
       <div class="field"><label for="si-p">Password</label><input id="si-p" name="password" type="password" autocomplete="current-password" required></div>
       <button class="btn primary" type="submit">${icon('user')} Sign in</button>
-      <p class="small muted" style="margin:10px 0 0">First time? Open the personal link your lead sent you, then connect Google or make a password in <b>Profile</b>. Forgot your password? Ask your lead for a reset link.</p></form>` : ''}
-    <form class="card" id="si1"><h3 style="margin-bottom:6px">${pw || cid ? 'First time: open your personal link' : 'Open your personal link'}</h3><p class="muted small">Your lead sent it by Telegram or email. It contains <code>&amp;t=</code>. Paste it here:</p>
-      <div class="linkbox"><input name="link" placeholder="https://…?hub=…&u=…&t=…" aria-label="Your personal link"><button class="btn ${pw || cid ? 'soft' : 'primary'}" type="submit">Open</button></div></form>
-    ${ctx.api.hub() ? `<form class="card" id="si2"><h3 style="margin-bottom:6px">Lost your link? Email me how to sign in</h3><p class="muted small">Works if your email is saved on the team.</p>
+      <p class="small muted" style="margin:10px 0 0">First time? Open the ${inv ? 'invite' : 'personal link'} your lead sent you${inv ? ' and choose a password there' : ', then connect Google or make a password in <b>Profile</b>'}. Forgot your password? Ask your lead for a reset link.</p></form>` : ''}
+    <form class="card" id="si1"><h3 style="margin-bottom:6px">${inv ? 'First time: open your invite' : pw || cid ? 'First time: open your personal link' : 'Open your personal link'}</h3><p class="muted small">${inv ? 'Your lead sent it by Telegram or email — it works once. Opened it already? Sign in the way you chose then. Paste the invite here:' : 'Your lead sent it by Telegram or email. It contains <code>&amp;t=</code>. Paste it here:'}</p>
+      <div class="linkbox"><input name="link" placeholder="${inv ? 'https://…#/invite?k=…' : 'https://…?hub=…&u=…&t=…'}" aria-label="Your ${inv ? 'invite' : 'personal link'}"><button class="btn ${pw || cid ? 'soft' : 'primary'}" type="submit">Open</button></div></form>
+    ${ctx.api.hub() ? `<form class="card" id="si2"><h3 style="margin-bottom:6px">${inv ? 'New phone? Email me a sign-in link' : 'Lost your link? Email me how to sign in'}</h3><p class="muted small">Works if your email is saved on the team.${inv ? ' The link works once, for 24 hours.' : ''}</p>
       <div class="linkbox"><input name="email" type="email" required placeholder="you@example.com" aria-label="Your email"><button class="btn soft" type="submit">Send</button></div><p class="small" id="si2o" style="margin:8px 0 0"></p></form>` : ''}
     <p class="small muted" style="text-align:center">${ctx.api.hub() ? '<a href="#/">← Back to the event page</a>' : '<a href="#/">← Haven Hub home</a>'}</p></div>`;
   const gi = $('#g-in'); if (gi) gi.onclick = () => startGoogle(ctx, cid, 'signin', '#/signin');
@@ -142,11 +225,13 @@ export async function signin(root, ctx, opts = {}) {
       const r = await ctx.api.postPublic('login', { username: f0.username.value.trim(), password: f0.password.value });
       if (!r.ok) { busy(b, false); f0.password.value = ''; f0.password.focus(); return toast(r.error || 'Could not sign in.', 'err'); }
       ctx.api.setSession({ u: r.u, t: r.t });
-      location.hash = '#/'; location.reload();
+      location.hash = '#/' + next; location.reload();
     };
   }
   $('#si1').onsubmit = e => {
     e.preventDefault();
+    const iv = String(e.target.link.value).match(/#\/invite\?k=([0-9a-f]{40})/i);
+    if (iv) { let h = ''; try { h = new URL(e.target.link.value.trim()).searchParams.get('hub') || ''; } catch (er) { /* not a URL */ } location.href = location.pathname + (h || ctx.api.hub() !== 'self' ? '?hub=' + encodeURIComponent(h || ctx.api.hub()) : '') + '#/invite?k=' + iv[1].toLowerCase(); return; }
     const p = parseLink(e.target.link.value);
     if (!p) return toast('That isn\'t a personal link — it should contain &t=…', 'err');
     const hub = p.hub || ctx.api.hub();

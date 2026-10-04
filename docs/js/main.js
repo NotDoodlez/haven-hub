@@ -1,10 +1,10 @@
 /* Haven Hub — boot, routing and the app shell (sidebar + top bar). */
 import * as api from './api.js';
-import { $, esc, icon, toast, avatar, layerOpen, daysTo, skeleton, store, setPhotos } from './ui.js';
+import { $, esc, icon, toast, avatar, layerOpen, daysTo, skeleton, store, setPhotos, confirmBox } from './ui.js';
 import { googleReturn } from './google.js';
 import { landing } from './views/landing.js';
 import { setup } from './views/setup.js';
-import { publicPage, signin, resetPage } from './views/public.js';
+import { publicPage, applyPage, invitePage, signin, resetPage } from './views/public.js';
 import * as member from './views/member.js';
 import { personPage } from './views/person.js';
 import { overview } from './views/admin-overview.js';
@@ -16,6 +16,7 @@ import { applications } from './views/admin-applications.js';
 import { content } from './views/admin-content.js';
 import { sponsorsPage } from './views/admin-sponsors.js';
 import { settings } from './views/admin-settings.js';
+import { inboxPage } from './views/admin-inbox.js';
 import { filesPage } from './views/files.js';
 import { tourBar } from './views/tour.js';
 
@@ -25,6 +26,7 @@ const ALL = ['admin', 'lead', 'member', 'viewer'], DOERS = ['admin', 'lead', 'me
 const NAV = [
   { g: 'Dashboard', r: 'admin', t: 'Overview', i: 'grid', roles: ['admin', 'lead', 'viewer'], v: overview },
   { g: 'Dashboard', r: 'admin/tasks', t: 'All tasks', i: 'list', roles: LEADS, v: tasksAdmin },
+  { g: 'Dashboard', r: 'admin/inbox', t: 'Inbox', i: 'mail', roles: LEADS, v: inboxPage, f: 'inbox', n: D => D.inboxNew || 0 },
   { g: 'Dashboard', r: 'admin/review', t: 'Review', i: 'image', roles: LEADS, v: review, n: D => (D.all || []).filter(t => t.status === 'Done' && !t.review && t.proof && t.owner !== D.me.key).length },
   { g: 'Dashboard', r: 'admin/timeline', t: 'Timeline', i: 'clock', roles: ['admin', 'lead', 'viewer'], v: timeline },
   { g: 'Dashboard', r: 'admin/scores', t: 'Scorecards', i: 'award', roles: ['admin', 'lead', 'viewer'], v: scores },
@@ -95,6 +97,12 @@ async function googleDone(g) {
   if (g.error) { toast(g.error, 'err'); return; }
   if (!api.hub()) { toast('Open your hub first, then press "Sign in with Google" again.', 'err'); return; }
   root.innerHTML = `<div class="boot">${icon('user')} Checking your Google sign-in…</div>`;
+  if (g.purpose === 'invite') { // a single-use invite, used with Google
+    const k = new URLSearchParams(String(g.back || '').split('?')[1] || '').get('k') || '';
+    const r = await api.postPublic('invite.claim', { k, how: 'google', idToken: g.idToken, nonce: g.nonce });
+    if (!r.ok) { toast(r.error, 'err'); return; }
+    api.setSession({ u: r.u, t: r.t }); toast(`You're in, ${String(r.name || '').split(' ')[0] || 'welcome'}! Next time just press “Sign in with Google”.`); location.hash = '#/'; return;
+  }
   if (g.purpose === 'link') {
     const r = await api.post('auth.google.link', { idToken: g.idToken, nonce: g.nonce });
     if (!r.ok) { toast(r.error, 'err'); return; }
@@ -104,7 +112,7 @@ async function googleDone(g) {
   }
   const r = await api.postPublic('auth.google', { idToken: g.idToken, nonce: g.nonce });
   if (r.ok) { api.setSession({ u: r.u, t: r.t }); toast(`Welcome back, ${String(r.name || '').split(' ')[0] || 'there'}!`); location.hash = '#/'; return; }
-  if (r.code === 'not_on_team') { ctx.google = { name: r.name, email: r.email, ticket: r.ticket, message: r.error }; location.hash = g.purpose === 'join' ? '#/join' : '#/signin'; return; }
+  if (r.code === 'not_on_team') { ctx.google = { name: r.name, email: r.email, ticket: r.ticket, message: r.error }; location.hash = g.purpose === 'join' ? '#/apply' : '#/signin'; return; }
   toast(r.error || 'Google sign-in failed.', 'err');
 }
 async function load(opts = {}) {
@@ -141,7 +149,14 @@ function render() {
   if (r === 'about' || r === 'tour') return landing(root, ctx);
   if (!api.hub()) return landing(root, ctx);
   if (r === 'reset') return resetPage(root, ctx);
-  if (!api.session()) return r === 'signin' ? signin(root, ctx, ctx.google ? { google: true, miss: ctx.google } : {}) : publicPage(root, ctx, { join: r === 'join' });
+  if (r === 'invite') return invitePage(root, ctx);
+  if (r === 'apply') return applyPage(root, ctx);
+  if (!api.session()) {
+    if (r === 'signin') return signin(root, ctx, ctx.google ? { google: true, miss: ctx.google } : {});
+    if (r === 'join') return applyPage(root, ctx);
+    if (NAV.some(n => n.r === r) || /^team\/[\w.-]+$/.test(r)) return signin(root, ctx, { next: r }); // a reminder's link on a device that isn't signed in
+    return publicPage(root, ctx);
+  }
   if (r === 'signin' || r === 'join') { history.replaceState(null, '', location.pathname + location.search + '#/'); return render(); } // already signed in: messages link here
   if (!ctx.D) {
     root.innerHTML = `<div class="app"><aside class="side"></aside><div class="main"><div class="top"><h1>Loading…</h1></div><div class="content">${skeleton(4)}</div></div></div>`;
@@ -214,10 +229,12 @@ function userMenu(btn) {
   setTimeout(() => document.addEventListener('click', off));
   m.onclick = e => { const b = e.target.closest('[data-m]'); if (!b) return; m.remove(); if (b.dataset.m === 'out') signOut(); if (b.dataset.m === 'refresh') load({ silent: false }).then(() => toast('Up to date.')); };
 }
-function signOut() {
+async function signOut() {
+  const D = ctx.D, me = D && D.me, inv = !!(D && D.signin === 'invite');
+  if (inv && me && !me.google && !me.account && !await confirmBox({ title: 'Sign out on this device?', text: 'You signed in with “just this device”, so coming back needs a new invite from your lead. Connect Google or make a password in Profile first if you can.', ok: 'Sign out' })) return;
   const pw = api.passwordSession();
   api.signOut(); ctx.D = null;
-  toast(pw ? 'Signed out.' : 'Signed out. Your personal link still works — open it again to come back.');
+  toast(pw || inv ? 'Signed out.' : 'Signed out. Your personal link still works — open it again to come back.');
   location.hash = '#/'; render();
 }
 // redraw after a drawer closes if fresh data arrived meanwhile

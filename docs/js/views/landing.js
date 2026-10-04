@@ -7,20 +7,20 @@ const SHOT = n => `assets/tour/${n}.webp`;
 const ROLES = [
   { k: 'admin', t: 'Admin', who: 'the lead organizer', shot: 'overview', as: 'admin', r: 'admin',
     say: 'Runs the team. Sees everything, changes everything — and is told about everything that matters.',
-    pages: [['grid', 'Overview', 'overdue, blocked, next 7 days, milestones, workload chart'], ['list', 'All tasks', 'filters, bulk edits, CSV import, “update the whole plan”'], ['image', 'Review', 'approve proof or ask for a redo'], ['clock', 'Timeline + Scorecards', 'every deadline by week; one card per person'],
-      ['userPlus', 'People', 'invite, roles, sign-in, reset a password, remove + hand over tasks'], ['inbox', 'Applications', 'the join form — already-on-the-team people flagged'], ['gift', 'Sponsors', 'drop a logo → it\'s on the public page'], ['settings', 'Settings', 'event, reminders, Telegram bot, public page, files']] },
+    pages: [['grid', 'Overview', 'overdue, blocked, next 7 days, milestones, workload chart, the signup count'], ['list', 'All tasks', 'filters, bulk edits, CSV import, “update the whole plan”'], ['image', 'Review', 'approve proof or ask for a redo'], ['clock', 'Timeline + Scorecards', 'every deadline by week; one card per person'],
+      ['userPlus', 'People', 'single-use invites, roles, sign-in, reset a password, remove + hand over tasks'], ['inbox', 'Applications', 'the Apply page in three languages — already-on-the-team people flagged'], ['mail', 'Inbox', 'new emails to your city address: handled, ignored or turned into a task'], ['gift', 'Sponsors', 'drop a logo → it\'s on the public page'], ['settings', 'Settings', 'event, reminders, Telegram bot, public page, files']] },
   { k: 'lead', t: 'Lead', who: 'area leads', shot: 'person', as: 'lead', r: 'team/lina',
     say: 'Plans and checks the work of their part of the team, without the admin-only settings.',
     pages: [['grid', 'Overview, All tasks, Review', 'add and edit tasks, approve proof'], ['users', 'Team + a page per person', 'job, contacts, open and done tasks, hours, activity'], ['clock', 'Timeline + Scorecards', 'who needs a nudge'], ['calendar', 'Calendar', 'everyone\'s deadlines, meetings, milestones']] },
   { k: 'member', t: 'Organizer', who: 'everyone else on the team', shot: 'member', as: 'member', r: 'tasks',
     say: 'Opens the hub and sees only their own tasks — what to do, by when, and who to ask.',
-    pages: [['check', 'My tasks', 'steps, deadline, Start · Done + proof · I\'m blocked'], ['folder', 'Files', 'posters, logos, slides, Canva links — and what each task needs'], ['calendar', 'Calendar', 'their tasks, meetings and milestones'], ['users', 'Team', 'photos, roles, who does what'], ['user', 'Profile', 'photo, reminders, Telegram, Google or password']] },
+    pages: [['check', 'My tasks', 'steps, deadline, Start · Done + proof · I\'m blocked'], ['folder', 'Files', 'posters, logos, slides, Canva links — upload their own, and see what each task needs'], ['calendar', 'Calendar', 'their tasks, meetings and milestones'], ['users', 'Team', 'photos, roles, who does what'], ['user', 'Profile', 'photo, reminders, Telegram, Google or password']] },
   { k: 'viewer', t: 'Guest viewer', who: 'HQ, mentors, sponsors', shot: 'viewer', as: 'viewer', r: 'admin',
     say: 'A read-only window on your progress. No contacts, proof photos or notes.',
     pages: [['grid', 'Overview', 'progress, overdue, milestones'], ['clock', 'Timeline + Scorecards', 'read-only'], ['calendar', 'Calendar + Team', 'read-only']] },
   { k: 'public', t: 'Public page', who: 'participants, parents, schools', shot: 'public', as: 'guest', r: '',
     say: 'Your event\'s page — no account needed. Put it in your bio and on posters.',
-    pages: [['flag', 'Countdown + dates', 'and your HQ signup link'], ['gift', 'Supported by', 'your sponsors\' logos, grouped by kind'], ['award', 'Getting ready', 'your organizing progress + public milestones'], ['userPlus', 'Join the team', 'a short form with “Sign up with Google”']] },
+    pages: [['flag', 'Countdown + dates', 'and your HQ signup link'], ['gift', 'Supported by', 'your sponsors\' logos, grouped by kind'], ['award', 'Getting ready', 'your organizing progress, public milestones, signups so far (if you want)'], ['userPlus', 'Apply to join', 'in English, Uzbek or Russian, with “Sign up with Google”']] },
 ];
 const FEATURES = [
   ['tasks', 'Tasks people actually finish', 'Every task has a why, the steps, a deadline and who to ask. One button each for Start, Done (with a photo, file or link as proof) and “I\'m blocked” — which reaches the leads instantly.'],
@@ -30,13 +30,21 @@ const FEATURES = [
   ['files', 'Files in one place', 'Posters, logos, slides and every Canva, Figma or Sheets link, sorted by role — and every task lists exactly the files it needs.'],
   ['applications', 'Applications that know your team', 'The public join form lands in your dashboard. Someone who is already on the team is spotted by email, Telegram or name, so nobody gets a second account.'],
 ];
+const NEW5 = [
+  ['key', 'Invites that work once', 'Each organizer gets an invite link. They open it, choose Google, a password or “just this device” — and the link is used up. A forwarded message lets nobody in.'],
+  ['globe', 'Apply page in three languages', 'English, Uzbek and Russian (more are one file away). School, interests and free time are asked in the reader\'s language and land in your dashboard in English.'],
+  ['award', 'Signups and funding', 'Type HQ\'s signup count (or send it to the bot with /signups 57) and see the goal, the trend and the funding it earns. Show it on the public page if you like.'],
+  ['message', 'A group feed', 'The organizer group hears about new signups, new applications and new files — each one can be switched off.'],
+  ['mail', 'Inbox watcher', 'A small script in your city mailbox reports new emails. Leads see them in Inbox and turn them into tasks, so no sponsor waits a week.'],
+  ['upload', 'Uploads', 'Anyone on the team can upload a poster, a photo or a PDF to Files. It stays private to the team unless they choose otherwise.'],
+];
 const FAQ = [
   ['Is it free?', 'Yes. On the Google Sheet setup it runs on your own Google account (Sheets + Apps Script), and the website is shared by every Haven. If you run your own server, that is free software too (MIT licence).'],
   ['Is it an official Hack Club product?', 'No — it is made by Haven organizers for Haven organizers. It follows HQ\'s rules (ages, shipping, adult supervision) and HQ\'s public brand guide, and it points participants to your official HQ signup page, because that is what counts for funding.'],
   ['Who can see our data?', 'Only people with a link or sign-in to your hub, and only what their role allows. Everything lives in your own Google Sheet (or your own server). The public page shows only what you switch on — team names are off by default because most organizers are minors.'],
-  ['Do organizers need accounts?', 'No. Each person gets a personal link. If you like, they can then sign in with Google or make a password, and a lost password is a reset link away.'],
+  ['Do organizers need accounts?', 'No. Each person gets an invite that works once, and chooses how to sign in from then on: Google, a password (on your own server) or just their device. Hubs from before v5 can keep the old personal links — Settings → Sign-in.'],
   ['Does it work on phones?', 'Yes — it is built phone-first, because that is where most of a teen team lives. Reminders come by Telegram or email the evening before a deadline.'],
-  ['Can we use it in our language?', 'The dashboard is in English today; reminders use your greeting word, and everything you type (tasks, rules, the join-form intro) can be in any language. Translations are on the roadmap — help is welcome on GitHub.'],
+  ['Can we use it in our language?', 'The public page and the Apply page come in English, Uzbek and Russian — pick yours in Settings → Public page. The dashboard is in English, and everything you type (tasks, rules, the tagline) can be in any language. Adding a language is one file (docs/js/i18n.js) — pull requests welcome.'],
 ];
 
 export function landing(root, ctx) {
@@ -71,9 +79,11 @@ export function landing(root, ctx) {
         ${FEATURES.map(([shot, t, d], i) => `<div class="feat-row ${i % 2 ? 'rev' : ''}"><div><h3>${esc(t)}</h3><p>${esc(d)}</p></div><figure class="browser"><div class="bar"><i></i><i></i><i></i></div><img src="${SHOT(shot)}" alt="${esc(t)}" loading="lazy" width="1280" height="800"></figure></div>`).join('')}
         <div class="feat-row"><div><h3>Reminders that reach a teenager</h3><p>The evening before every deadline, by a Telegram bot and/or email. Leads get BLOCKED alerts at once, a daily summary and a Sunday report; the organizer group gets new and finished tasks. Everyone hears when their tasks change.</p></div>
           <div class="chat" aria-label="An example Telegram conversation with the hub's bot"><div class="msg bot">Salom, Lina! 👋<br><br>Due tomorrow:<br>• T014 Design name badges (18:00)<br><br>Open your tasks: haven.example/…</div><div class="msg me">/tasks</div><div class="msg bot">• T014 Design name badges — due Thu 18:00<br>• T021 Sticker for the welcome pack — due Mon 20:00</div><div class="msg bot alert">🔴 BLOCKED — Theo<br>T009 Visit Lincoln Middle School<br>Needs: the info sheet in print from Lina by Thursday</div></div></div>
-        <div class="feat-row rev"><div><h3>Sign-in that fits a teen team</h3><p>Start with a personal link — nothing to install, no account. Later, “Sign in with Google” or a password works on any device, used links stop working, and you reset a forgotten password with a one-time link.</p></div>
-          <figure class="browser"><div class="bar"><i></i><i></i><i></i><span>Sign in</span></div><img src="${SHOT('signin')}" alt="The sign-in page: Sign in with Google, password, personal link" loading="lazy" width="1280" height="800"></figure></div>
+        <div class="feat-row rev"><div><h3>Sign-in that fits a teen team</h3><p>Each organizer gets an invite that works once — nothing to install. They pick “Sign in with Google”, a password (on your own server) or just this device, and the invite is used up. A forgotten password is a one-time reset link away.</p></div>
+          <figure class="browser"><div class="bar"><i></i><i></i><i></i><span>Sign in</span></div><img src="${SHOT('signin')}" alt="The sign-in page: Sign in with Google, open your invite, or get a sign-in link by email" loading="lazy" width="1280" height="800"></figure></div>
       </section>
+
+      <section><h2 class="section-t big">New in version 5</h2><div class="features">${NEW5.map(([ic, t, d]) => `<div class="feature"><div class="fi">${icon(ic)}</div><h3>${esc(t)}</h3><p>${esc(d)}</p></div>`).join('')}</div></section>
 
       <section id="how"><h2 class="section-t big">How it runs</h2><p class="lede">Pick one. You can move from the first to the second later without losing anything.</p>
         <div class="features how3">
@@ -94,8 +104,8 @@ export function landing(root, ctx) {
       <section class="final card"><img src="assets/daven.png" alt="" width="120" height="82"><div><h2>Ready when your team is</h2><p class="muted">Take the tour, then set up your hub in about 10 minutes.</p></div>
         <div class="row"><a class="btn accent lg" href="${esc(tour)}">${icon('play')} Take the tour</a><a class="btn primary lg" href="${here}#/setup">Set up your Haven</a></div></section>
 
-      ${SELF ? '' : `<form class="card" id="paste"><div class="card-h"><div><h3>Already on a team?</h3><div class="sub">Paste the personal link your lead sent you.</div></div></div>
-        <div class="linkbox"><input name="link" placeholder="https://…/?hub=…&u=…&t=…" aria-label="Your personal link"><button class="btn primary" type="submit">Open</button></div><p class="errline small" id="perr" style="margin:6px 0 0"></p></form>`}
+      ${SELF ? '' : `<form class="card" id="paste"><div class="card-h"><div><h3>Already on a team?</h3><div class="sub">Paste the invite or personal link your lead sent you.</div></div></div>
+        <div class="linkbox"><input name="link" placeholder="https://…/?hub=…&u=…&t=…" aria-label="Your invite or personal link"><button class="btn primary" type="submit">Open</button></div><p class="errline small" id="perr" style="margin:6px 0 0"></p></form>`}
     </main>
     <footer class="pub-foot">Made by the Haven Tashkent organizers for every Haven · not an official Hack Club HQ product · <a href="${esc(repo)}" target="_blank" rel="noopener">open source (MIT)</a> · live example: <a href="https://haventash.xyz" target="_blank" rel="noopener">haventash.xyz</a> · <a href="${here}privacy.html">Privacy</a> · <a href="${here}terms.html">Terms</a></footer></div>`;
   $$('.role-tabs button', root).forEach(b => { b.onclick = () => {
@@ -106,8 +116,10 @@ export function landing(root, ctx) {
   const f = $('#paste', root);
   if (f) f.onsubmit = e => {
     e.preventDefault();
+    const inv = String(e.target.link.value).match(/[?&]hub=([\w-]+)[^#]*#\/invite\?k=([0-9a-f]{40})/i);
+    if (inv) { location.href = location.pathname + '?hub=' + encodeURIComponent(inv[1]) + '#/invite?k=' + inv[2].toLowerCase(); return; }
     const p = parseLink(e.target.link.value);
-    if (!p || !p.hub) { $('#perr').textContent = 'That doesn\'t look like a Team Hub link. It contains ?hub=…&u=…&t=…'; return; }
+    if (!p || !p.hub) { $('#perr').textContent = 'That doesn\'t look like a Team Hub link. It contains ?hub=… and then #/invite?k=… or &u=…&t=…'; return; }
     location.href = location.pathname + '?hub=' + encodeURIComponent(p.hub) + '&u=' + encodeURIComponent(p.u) + '&t=' + encodeURIComponent(p.t);
   };
 }
