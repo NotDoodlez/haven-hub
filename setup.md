@@ -129,6 +129,17 @@ If the person is **already on the team** (same email, Telegram username or name)
 - **Inbox watcher** (5 minutes). **Settings → Connections → Make a feed key.** Then, signed in to Google as your **city mailbox**, open [script.new](https://script.new), paste [`apps-script/inbox-watcher.gs`](apps-script/inbox-watcher.gs), fill in `HUB_API` and `FEED_KEY` from the Connections card, choose **install → Run** and allow access. Every 5 minutes it sends the hub the sender, subject and first lines of new emails; leads see them in **Dashboard → Inbox** (and get a Telegram message), mark them handled or ignored, or **Make a task** for someone. Replies still happen in Gmail. The watcher runs in the mailbox's own account, so the hub itself never gets access to email. If your mailbox's organization blocks Apps Script, forward the mail to a Gmail you own and run the watcher there.
 - **The feed key** can only add emails to the Inbox and save the signup count. **Make a new key** switches every script off until you paste the new one.
 
+## Step 6c — Ambassadors and referral links (optional)
+
+Ambassadors are students — not organizers — who bring their school: one or two per school, recruited at the end of a class talk. Each gets a code and a link (`https://yourdomain/r/CODE` on your own server, `…?hub=…#/r/CODE` on the shared website) that ends on your signup page with `?ref=CODE`, so HQ counts the referral.
+
+1. **Settings → Referrals & ambassadors.** Leave **Ask the friend's first name first** *Off* until your HQ contact is OK with you storing participants' first names — the links already work. Set the rewards (one per line, starting with the number of friends, e.g. `3 friends: same team`), the ambassadors' Telegram group link and, if you like, your own message in each language (`{link}` = their link). Names are deleted 7 days after the event unless you pick another day.
+2. **Ambassadors → Add ambassador** (name, school, Telegram). Whoever adds them is their **buddy**; leads can pick another one. Then **Send their page**: copy the message into a private chat with the student. Their page has their link, QR code, an A4 poster to print, a message to forward to their class group, their numbers and the top 5.
+3. **Every Sunday:** **Sunday leaderboard** → copy → post it in the ambassadors' group. Leads get an ambassadors section in the weekly report; every buddy gets a short message about their own ambassadors (who has no new names this week).
+4. **Event days:** at the check-in desk open **Ambassadors → Names**, search the friend, press **Came**. Someone says “X invited me” without using the link: **Add a name**. From the first event day the leaderboard counts friends who came, never more than 8 each.
+
+The bot never messages ambassadors, and their page never shows anyone's contacts — the top 5 is first names and numbers. **Channel codes** (leads) are codes for a place — `IG` for the Instagram bio, `UZ1` for a channel post — so you can see which one brings signups.
+
 ## Step 7 — Sponsors (optional)
 
 **Dashboard → Sponsors → drop a logo** (PNG, JPG, WebP or SVG). The website shrinks it, you name the sponsor, pick the kind (*Prize sponsor*, *In-kind*, *Venue*, *Partner*…) and an optional one-line “what they give”. Public sponsors appear as **Supported by** on your public page; switch *Show on the public page* off while you wait for their OK to name them.

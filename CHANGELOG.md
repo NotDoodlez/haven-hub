@@ -2,6 +2,18 @@
 
 A hub keeps working when the website is newer than its backend: new pages appear once the hub's `Code.gs` lists the feature. To update a Google Sheet hub, paste the new `Code.gs` and deploy a **new version** of the same deployment ([setup.md → Updating](setup.md#updating)); on your own server run `hubctl deploy`.
 
+## 5.1.0 — 2026-10-04
+
+- **Ambassadors.** Students who bring their school, each with a code and a link `<hub>/r/CODE` (a QR code on their poster). New page *Ambassadors* for everyone on the team: whoever adds an ambassador is their **buddy** and looks after them; leads see and change them all. *Add several*, *Send their page* (a ready Telegram message in the hub's languages), *Poster*, pause / left, channel codes (`IG`, `UZ1`… for a place rather than a person), *Sunday leaderboard* (top 5, first names only, to copy into the ambassadors' group). Applications has a new interest *School ambassador* and a *Make ambassador* button. The Overview shows an Ambassadors card.
+- **Referral links.** `/r/CODE` always ends on your signup page with `?ref=CODE`, so HQ counts the referral. With `referrals = on` (Settings → Referrals & ambassadors) the page first asks the friend's first name (Uzbek / Russian / English) and saves it with the code — nothing else — so you know who invited whom and hand out rewards at check-in. Off (the default) saves nothing; printed QR codes work either way. On your own server `/r/CODE` goes straight to the signup page while names are off.
+- **An ambassador's own page** (`#/amb?k=…&s=…`, no account): their link, QR code, an A4 poster to print, the message to forward, their numbers, the rewards they reached and the top 5. It never shows anyone's contacts. A new link switches the old one off.
+- **Check-in.** During the event days everyone on the team can tick *Came* in *Ambassadors → Names*, or add someone who says who invited them. From the first event day the leaderboard counts friends who came, capped at `referral_cap` (8).
+- **Privacy.** After `referral_delete_after` (default: 7 days after the event) the hub deletes friends' names and ambassadors' contacts, notes and page links by itself; the numbers stay. Admins can do it any time. The bot never messages ambassadors; buddies get one Sunday message about their own ambassadors, and the weekly report has an ambassadors section.
+- Grew out of Abbos's **Referral page, part 1** (5.0.0): his code whitelist and formula guard are now in `Code.gs`, and the separate `apps-script/referrals/` web app is gone — one place for the data, no second Sheet.
+- QR codes are made in the browser by the vendored [qrcode-generator](https://github.com/kazuhikoarase/qrcode-generator) (MIT, `docs/js/vendor/qrcode.js`).
+- Uzbek dates are written out by the hub: many browsers have no Uzbek month names and printed “M11 14” on the public page.
+- `hubctl deploy` takes a backup first and stops if it fails.
+
 ## 5.0.0 — 2026-10-03
 
 - **Single-use invites** (setting `signin_mode`, Settings → How people sign in). An invite (`#/invite?k=…`) works once: the person opens it and picks *Sign in with Google*, a password (own server) or *just this device*, and it is used up. Messages, reminders and the bot never carry a key, so a forwarded or leaked message lets nobody in. A newer invite switches the older one off; invites expire after `invite_days` (7). People shows *invite sent* / *invite expired*; *⋯ → New invite & message*. **New hubs start with invites; hubs from before v5 keep personal links until an admin switches** — links people already have keep working until you reset them.

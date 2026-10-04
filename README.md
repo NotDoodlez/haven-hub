@@ -12,7 +12,7 @@
 | Reminders by Telegram or email the evening before | **All tasks**: filters, bulk edits, CSV import, *update the whole plan* | **Apply page** (three languages) with *Sign up with Google* |
 | A message whenever their tasks change | **Review** proof, **Timeline**, **Scorecards** | Read-only **guest links** for HQ, mentors, sponsors |
 | **Files**: posters, logos, Canva links, **uploads** — and what each task needs | **Team** + a page per person: job, contacts, work, hours, activity · **Inbox**: new emails to the city address | |
-| A **single-use invite**, then Google, a password or just their device | **People** (invites, roles, password reset links), **Applications** (spots people already on the team), **Sponsors** (drop a logo), **Settings**, Telegram bot | |
+| A **single-use invite**, then Google, a password or just their device | **People** (invites, roles, password reset links), **Applications** (spots people already on the team), **Ambassadors** (students with referral links, QR posters, check-in, a Sunday leaderboard), **Sponsors** (drop a logo), **Settings**, Telegram bot | |
 
 ## How it works
 

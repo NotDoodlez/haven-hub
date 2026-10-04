@@ -1,5 +1,5 @@
 /**
- * Haven Hub — the backend for one Haven's Team Hub.                                             v5.0.0
+ * Haven Hub — the backend for one Haven's Team Hub.                                             v5.1.0
  *
  * A Google Sheet is the database (you can edit it by hand). This script, bound to that Sheet, is:
  *   - the JSON API for the website  https://notazizelse.github.io/haven-hub/?hub=<your deployment id>
@@ -15,7 +15,7 @@
  * The URL stays the same. Secrets never go in this file: personal tokens live in the Sheet, the bot token in Script properties.
  */
 
-const HUB_VERSION = '5.0.0';
+const HUB_VERSION = '5.1.0';
 // On your own server (server/index.mjs) this same file runs on Node; HUB_SERVER is then provided by the server.
 const SELF_HOSTED = typeof HUB_SERVER !== 'undefined' && !!HUB_SERVER;
 const DEFAULT_SITE = 'https://notazizelse.github.io/haven-hub';
@@ -39,11 +39,13 @@ const TABS = {
   Inbox: ['id', 'time', 'from', 'subject', 'snippet', 'link', 'status', 'handled_by', 'task', 'mailbox', 'got_at'],
   Links: ['name', 'access', 'personal_link', 'telegram_connected', 'message_to_send'],
   Invites: ['code', 'key', 'created_at', 'expires_at', 'used_at', 'used_how', 'by'],
+  Ambassadors: ['key', 'name', 'school', 'contact', 'code', 'token', 'buddy', 'status', 'kind', 'joined_at', 'note', 'app_id', 'reward', 'hours'],
+  Referrals: ['id', 'time', 'name', 'code', 'came', 'checked_by', 'checked_at'],
   Report: ['time', 'what', 'detail'],
 };
 const STATUSES = ['Not started', 'In progress', 'Blocked', 'Done', 'Dropped'];
 /** What this backend can do. The website shows a feature only when the hub lists it (Apps Script hubs update Code.gs when they get round to it). */
-const FEATURES = ['files', 'unassigned', 'sponsors', 'photos', 'profiles', 'appmatch', 'apply', 'invites', 'signups', 'inbox', 'uploads'];
+const FEATURES = ['files', 'unassigned', 'sponsors', 'photos', 'profiles', 'appmatch', 'apply', 'invites', 'signups', 'inbox', 'uploads', 'ambassadors'];
 const ACCESS = ['admin', 'lead', 'member', 'viewer'];
 const RANK = { viewer: 0, member: 1, lead: 2, admin: 3 };
 const NEED = { any: 0, member: 1, lead: 2, admin: 3 };
@@ -95,6 +97,12 @@ const SETTINGS = [
   ['feed_applications', 'yes', 'Post new team applications in the Telegram group (first name + interest only)'],
   ['feed_files', 'yes', 'Post new files and links in the Telegram group (not the leads-only ones)'],
   ['inbox_alerts', 'leads', 'New emails from the inbox watcher: "leads" (Telegram to leads), "group" (the organizer group) or "no"'],
+  ['referrals', 'off', 'Referral links (<hub>/r/CODE): "on" = the page asks the friend\'s first name and saves it with the code, then the signup page · "off" = straight to the signup page with ?ref=CODE, nothing saved'],
+  ['referral_delete_after', '', 'Names saved by referral links (and ambassadors\' contacts) are deleted after this day, YYYY-MM-DD (empty = 7 days after the event)'],
+  ['referral_cap', '8', 'Most friends one ambassador can count on the leaderboard'],
+  ['ambassador_group', '', 'Link to the ambassadors\' Telegram group (shown on their page)'],
+  ['referral_rewards', '', 'What ambassadors get, one line each, e.g. "3 friends: same team" — shown on their page (empty = hidden)'],
+  ['amb_message', '', 'The message ambassadors send to friends; {link} = their link (empty = the standard text)'],
 ];
 /** The shared website's Google sign-in client (owned by the Haven Hub maintainers). A hub can use its own: Settings → google_client_id. */
 const SHARED_GOOGLE_CLIENT_ID = '';
@@ -102,6 +110,8 @@ const SHARED_GOOGLE_CLIENT_ID = '';
 LANGS.filter(l => l !== 'en').forEach(l => {
   SETTINGS.push(['tagline_' + l, '', 'Tagline in ' + LANG_NAMES[l] + ' (empty = the English one)']);
   SETTINGS.push(['join_intro_' + l, '', 'Text above the join form in ' + LANG_NAMES[l] + ' (empty = the English one)']);
+  SETTINGS.push(['referral_rewards_' + l, '', 'Ambassador rewards in ' + LANG_NAMES[l] + ' (empty = the English text)']);
+  SETTINGS.push(['amb_message_' + l, '', 'Ambassadors\' message to friends in ' + LANG_NAMES[l] + ' (empty = the standard text)']);
 });
 /** "en,uz,ru" → ['en', 'uz', 'ru'] — known languages only, English when nothing is left. */
 function langsOf_(v) { const out = String(v || '').toLowerCase().split(/[\s,;]+/).filter((l, i, a) => LANGS.indexOf(l) >= 0 && a.indexOf(l) === i); return out.length ? out : ['en']; }
@@ -109,7 +119,7 @@ function langsOf_(v) { const out = String(v || '').toLowerCase().split(/[\s,;]+/
 function texts_(key) { const S = S_(), o = {}; langsOf_(S.languages).forEach(l => { const v = l === 'en' ? S[key] : S[key + '_' + l]; if (v) o[l] = v; }); if (!o.en && S[key]) o.en = S[key]; return o; }
 const YESNO = ['weekly_report', 'email_reminders', 'done_alerts', 'group_done_posts', 'change_alerts', 'public_page', 'public_show_progress', 'public_show_team', 'join_form', 'self_claim',
   'public_show_signups', 'feed_signups', 'feed_applications', 'feed_files'];
-const URL_KEYS = ['site_url', 'signup_url', 'instagram', 'telegram_channel', 'website', 'moved_to'];
+const URL_KEYS = ['site_url', 'signup_url', 'instagram', 'telegram_channel', 'website', 'moved_to', 'ambassador_group'];
 
 /** Optional starter checklist added at setup. Days are relative to event_start. Edit or delete freely. */
 const STARTER = {
@@ -1576,12 +1586,247 @@ function requestLink_(_, b) {
   return msg;
 }
 
+// ================================================================== ambassadors + referral links (grew out of Abbos's "Referral page, part 1")
+// An ambassador is a student — not an organizer — who brings their school. Their link <hub>/r/CODE sends friends on to the signup page
+// with ?ref=CODE, so HQ counts the referral too. With referrals = "on", the page first asks the friend's first name and saves it with the
+// code, so the team knows who invited whom and hands out rewards at check-in. Nothing else about a friend is stored, and names are deleted
+// after referral_delete_after. Ambassadors never sign in: a private link opens their own page (code, QR code, poster, numbers, top 5).
+// Anyone on the team can add an ambassador and becomes their buddy; leads see and change them all. The bot never messages ambassadors.
+const AMB_STATUS = ['active', 'paused', 'left'];
+const NO_COUNT = { n: 0, came: 0, week: 0, last: '' };
+const TRANSLIT = { а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'yo', ж: 'j', з: 'z', и: 'i', й: 'y', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r', с: 's', т: 't', у: 'u',
+  ф: 'f', х: 'x', ц: 'ts', ч: 'ch', ш: 'sh', щ: 'sh', ъ: '', ы: 'i', ь: '', э: 'e', ю: 'yu', я: 'ya', ў: 'o', қ: 'q', ғ: 'g', ҳ: 'h' };
+/** Codes go into links and the Sheet: letters, digits, _ and - only, upper case. */
+function cleanCode_(v) { return String(v == null ? '' : v).replace(/[^A-Za-z0-9_-]/g, '').replace(/^-+/, '').slice(0, 32).toUpperCase(); }
+/** A friend's first name as stored: short, and never read as a formula by the Sheet. */
+function cleanFirst_(v) { const t = clean_(v, 40).replace(/\s+/g, ' '); return /^[=+\-@]/.test(t) ? "'" + t : t; }
+function shownName_(v) { return String(v || '').replace(/^'(?=[=+\-@])/, ''); }
+/** "Малика Каримова" → "malika" (Latin letters only — for keys and codes). */
+function latin_(name) { return String(name || '').trim().split(/\s+/)[0].toLowerCase().split('').map(c => TRANSLIT[c] !== undefined ? TRANSLIT[c] : c).join('').normalize('NFKD').replace(/[^a-z0-9]/g, ''); }
+function ambassadors_() { return has_('Ambassadors') ? rows_('Ambassadors').filter(a => a.key) : []; }
+function referrals_() { return has_('Referrals') ? rows_('Referrals').filter(r => r.id) : []; }
+function findAmb_(key) { return ambassadors_().find(a => a.key === String(key || '')) || null; }
+function ambByCode_(code) { const c = cleanCode_(code); return c ? ambassadors_().find(a => cleanCode_(a.code) === c) || null : null; }
+const isAmb_ = a => (a.kind || 'ambassador') === 'ambassador';
+const ambStatus_ = a => a.status || 'active';
+function firstOf_(key) { const p = findPerson_(key); return p ? first_(p) : ''; }
+/** The link on posters and QR codes: <server>/r/CODE on your own server, <site>?hub=…#/r/CODE on a Sheet hub. */
+function refLink_(code) { const c = encodeURIComponent(cleanCode_(code)), pub = SELF_HOSTED ? HUB_SERVER.publicUrl() : ''; return pub ? pub + '/r/' + c : hubUrl_('r/' + c); }
+function ambPageLink_(a) { return hubUrl_('amb?k=' + encodeURIComponent(a.key) + '&s=' + a.token); }
+/** HQ's signup page with the code, so HQ counts the referral too ('' when the hub has no signup page). */
+function signupWithRef_(code) { const u = S_().signup_url, c = cleanCode_(code); return !u ? '' : c ? u + (u.indexOf('?') >= 0 ? '&' : '?') + 'ref=' + encodeURIComponent(c) : u; }
+function referralsOn_() { return S_().referrals === 'on'; }
+/** The day names are deleted: the setting, or 7 days after the event. */
+function refDeleteDate_() { const S = S_(); return isDate_(S.referral_delete_after) ? S.referral_delete_after : addDays_(isDate_(S.event_end) ? S.event_end : isDate_(S.event_start) ? S.event_start : fmt_(new Date(), 'yyyy-MM-dd'), 7); }
+function refCap_() { const n = parseInt(S_().referral_cap, 10); return n >= 1 && n <= 1000 ? n : 8; }
+function today_() { return fmt_(new Date(), 'yyyy-MM-dd'); }
+/** From the first event day on, the leaderboard counts friends who came (checked in), not names. */
+function checkinStarted_() { return today_() >= S_().event_start; }
+/** The event days: everyone on the team can tick "came" at the check-in desk. */
+function checkinOpen_() { const S = S_(), d = today_(); return d >= S.event_start && d <= (S.event_end || S.event_start); }
+/** Per code: names saved, friends who came, names in the last 7 days, the newest one. */
+function refCounts_() {
+  const o = {}, weekAgo = fmt_(new Date(Date.now() - 7 * 864e5));
+  referrals_().forEach(r => {
+    const c = cleanCode_(r.code); if (!c) return;
+    const x = o[c] || (o[c] = { n: 0, came: 0, week: 0, last: '' });
+    x.n++; if (r.came === 'yes') x.came++; if (r.time >= weekAgo) x.week++; if (r.time > x.last) x.last = r.time;
+  });
+  return o;
+}
+/** Leaderboard score: friends who came once check-in started, names before that — never more than referral_cap. */
+function ambScore_(x) { return Math.min(refCap_(), checkinStarted_() ? x.came : x.n); }
+/** The top 5 ambassadors as ambassadors see it: first name + score only. */
+function ambTop_(counts, meKey) {
+  return ambassadors_().filter(a => isAmb_(a) && ambStatus_(a) !== 'left').map(a => ({ a: a, s: ambScore_(counts[cleanCode_(a.code)] || NO_COUNT) })).filter(x => x.s > 0)
+    .sort((p, q) => q.s - p.s || String(p.a.joined_at).localeCompare(String(q.a.joined_at))).slice(0, 5).map(x => ({ name: first_(x.a), score: x.s, me: x.a.key === meKey }));
+}
+function ambOut_(a, counts) {
+  const x = counts[cleanCode_(a.code)] || NO_COUNT;
+  return { key: a.key, name: a.name, school: a.school, contact: a.contact, code: cleanCode_(a.code), buddy: a.buddy || '', status: ambStatus_(a), kind: a.kind || 'ambassador', joined_at: a.joined_at,
+    note: a.note, app_id: a.app_id || '', reward: a.reward || '', hours: a.hours || '', link: refLink_(a.code), page: !!a.token, n: x.n, came: x.came, week: x.week, last: x.last, score: ambScore_(x) };
+}
+function referralOut_(r) { return { id: r.id, time: r.time, name: shownName_(r.name), code: cleanCode_(r.code), came: r.came === 'yes', checked_by: r.checked_by || '', checked_at: r.checked_at || '' }; }
+/** Leads look after every ambassador; anyone else on the team looks after the ones they are the buddy of. */
+function canAmb_(me, a) { return isLead_(me) || (!!a && !!a.buddy && a.buddy === me.key); }
+/** Who may see a name that came through a link: leads, everyone during the event days (check-in), and the ambassador's buddy. */
+function seesRef_(me, r, mine) { if (isLead_(me) || checkinOpen_()) return true; const a = ambByCode_(r.code); return !!a && (mine ? mine.indexOf(a.key) >= 0 : a.buddy === me.key); }
+/** What the hub shows someone on the team: their ambassadors (all of them for leads) and the names those links brought. */
+function ambData_(me) {
+  const lead = isLead_(me), counts = refCounts_(), list = ambassadors_().filter(a => lead || a.buddy === me.key), keys = list.map(a => a.key);
+  return {
+    ambassadors: list.map(a => ambOut_(a, counts)),
+    referrals: referrals_().filter(r => seesRef_(me, r, keys)).sort((p, q) => p.time < q.time ? 1 : p.time > q.time ? -1 : 0).slice(0, 1500).map(referralOut_),
+    amb: { on: referralsOn_(), cap: refCap_(), started: checkinStarted_(), open: checkinOpen_(), deleteOn: refDeleteDate_(), names: lead ? referrals_().length : null },
+  };
+}
+function newAmbCode_(name) {
+  const base = latin_(name).replace(/[0-9]/g, '').slice(0, 8).toUpperCase() || 'AMB', taken = {};
+  ambassadors_().forEach(a => { taken[cleanCode_(a.code)] = 1; });
+  for (let i = 0; i < 300; i++) { const c = base + (10 + Math.floor(Math.random() * 90)); if (!taken[c]) return c; }
+  return base + Date.now().toString(36).slice(-5).toUpperCase();
+}
+function ambKey_(name) {
+  const base = (latin_(name) || 'amb').slice(0, 20), taken = ambassadors_().map(a => a.key);
+  let k = base, i = 2;
+  while (taken.indexOf(k) >= 0) k = base.slice(0, 18) + i++;
+  return k;
+}
+function cleanContact_(v) { return clean_(v, 80).replace(/^https?:\/\/t\.me\//i, '@'); }
+/** Add or change ambassadors: { amb: {…} }, or { list: [{…}, …] } ("Add several"), optionally { fromApplication: 'A007' }.
+ *  Anyone on the team may add one (they become the buddy); only leads pick someone else as the buddy or change other people's ambassadors. */
+function saveAmb_(me, b) {
+  const many = Array.isArray(b.list), list = many ? b.list.slice(0, 100) : [b.amb || {}], lead = isLead_(me), team = team_().map(p => p.key), errs = [], saved = [];
+  const app = b.fromApplication ? rows_('Applications').find(r => r.id === String(b.fromApplication)) : null;
+  if (b.fromApplication && !app) return { ok: false, error: 'No such application.' };
+  list.forEach((x, i) => {
+    x = x || {};
+    const at = many ? `Line ${i + 1}: ` : '', cur = x.key ? findAmb_(x.key) : null;
+    if (x.key && !cur) return errs.push(at + 'No such ambassador.');
+    if (cur && !canAmb_(me, cur)) return errs.push(at + `Only leads${cur.buddy ? ' or ' + firstOf_(cur.buddy) + ' (the buddy)' : ''} can change ${first_(cur)}.`);
+    const a = cur ? Object.assign({}, cur) : { kind: 'ambassador', status: 'active', joined_at: now_(), token: '', buddy: '', code: '' };
+    if (!cur || x.name !== undefined) { const v = clean_(x.name, 60); if (v.length < 2) return errs.push(at + 'Write their name.'); a.name = v; }
+    [['school', 100], ['note', 500], ['reward', 200], ['hours', 20]].forEach(f => { if (x[f[0]] !== undefined) a[f[0]] = clean_(x[f[0]], f[1]); else if (!cur) a[f[0]] = ''; });
+    if (x.contact !== undefined) a.contact = cleanContact_(x.contact); else if (!cur) a.contact = '';
+    if (x.kind !== undefined && (lead || !cur)) a.kind = x.kind === 'channel' ? 'channel' : 'ambassador';
+    if (a.kind === 'channel' && !lead) return errs.push(at + 'Only leads make channel codes.');
+    if (x.status !== undefined) { if (AMB_STATUS.indexOf(String(x.status)) < 0) return errs.push(at + 'Status is active, paused or left.'); a.status = String(x.status); }
+    if (lead && x.buddy !== undefined) { const k = String(x.buddy || ''); if (k && team.indexOf(k) < 0) return errs.push(at + 'The buddy must be someone on the team.'); a.buddy = k; }
+    else if (!cur) a.buddy = a.kind === 'channel' ? '' : me.key;
+    if (x.code !== undefined && cleanCode_(x.code)) {
+      const c = cleanCode_(x.code), other = ambByCode_(c);
+      if (c.length < 2) return errs.push(at + 'The code needs at least 2 letters or digits.');
+      if (other && (!cur || other.key !== cur.key)) return errs.push(at + `The code ${c} is taken (${other.name}).`);
+      a.code = c;
+    } else if (!cleanCode_(a.code)) a.code = newAmbCode_(a.name);
+    if (a.status === 'left') a.token = '';
+    if (cur) { Object.assign(cur, a); write_('Ambassadors', cur); saved.push(cur); }
+    else {
+      a.key = ambKey_(a.name); a.token = a.kind === 'channel' ? '' : newToken_();
+      if (app && !many) a.app_id = app.id;
+      append_('Ambassadors', a); saved.push(a);
+    }
+    log_(me.name, '', cur ? 'Ambassador changed' : a.kind === 'channel' ? 'Channel code added' : 'Ambassador added', a.name + ' — ' + a.code);
+  });
+  if (!saved.length) return { ok: false, error: errs[0] || 'Nothing to save.', errors: errs };
+  if (app && saved[0].app_id === app.id) { app.status = 'accepted'; app.handled_by = me.name; write_('Applications', app); }
+  const counts = refCounts_(), d = ambData_(me);
+  return { ok: true, ambassador: ambOut_(saved[0], counts), saved: saved.map(a => a.key), errors: errs, ambassadors: d.ambassadors, amb: d.amb };
+}
+/** Leads: remove an ambassador added by mistake (the names their link brought stay, under the code). Someone who stops: status "left". */
+function deleteAmb_(me, b) {
+  const a = findAmb_(b.key);
+  if (!a) return { ok: false, error: 'No such ambassador.' };
+  deleteRows_('Ambassadors', [a]);
+  log_(me.name, '', 'Ambassador removed', a.name + ' — ' + cleanCode_(a.code));
+  return Object.assign({ ok: true }, ambData_(me));
+}
+/** The ambassador's private page link (made the first time; reset = a new one, the old link stops working). */
+function ambLink_(me, b) {
+  const a = findAmb_(b.key);
+  if (!a || !canAmb_(me, a)) return { ok: false, error: 'No such ambassador.' };
+  if (!isAmb_(a)) return { ok: false, error: 'A channel code has no page — share its link.' };
+  if (ambStatus_(a) === 'left') return { ok: false, error: `${first_(a)} has left — set them back to active first.` };
+  if (b.reset || !a.token) { a.token = newToken_(); write_('Ambassadors', a); log_(me.name, '', b.reset ? 'Ambassador page link reset' : 'Ambassador page link made', a.name); }
+  return { ok: true, key: a.key, name: a.name, first: first_(a), page: ambPageLink_(a), link: refLink_(a.code), code: cleanCode_(a.code), event: event_(), langs: langsOf_(S_().languages) };
+}
+/** Public: what a referral link needs — is the name step on, who invited (first name), where the signup is. */
+function referralCheck_(_, b) {
+  const S = S_(), code = cleanCode_(b.code), a = ambByCode_(code), url = signupWithRef_(code);
+  if (!url) return { ok: false, code: 'no_signup', error: 'This event has no signup page yet.' };
+  return { ok: true, on: referralsOn_(), code: code, inviter: a && isAmb_(a) && ambStatus_(a) !== 'left' ? first_(a) : '', url: url, deleteOn: refDeleteDate_(),
+    langs: langsOf_(S.languages), event: { name: event_(), city: S.city, start: S.event_start, end: S.event_end } };
+}
+/** Public: a friend's first name + the code (only while referrals = on), then on to the signup page. A flood or a bot: nothing is saved, people still get through. */
+function referralSave_(_, b) {
+  const code = cleanCode_(b.code), url = signupWithRef_(code);
+  if (!url) return { ok: false, code: 'no_signup', error: 'This event has no signup page yet.' };
+  if (!referralsOn_() || clean_(b.company)) return { ok: true, url: url, saved: false }; // off: nothing is stored · company = the honeypot bots fill in
+  const name = cleanFirst_(b.name);
+  if (shownName_(name).length < 2) return { ok: false, code: 'name', error: 'Write your first name.', url: url };
+  const cache = CacheService.getScriptCache(), n = Number(cache.get('ref_n') || 0), ck = 'ref_c_' + (code + '_' + normName_(shownName_(name))).replace(/[^\w]/g, '').slice(0, 80);
+  if (n >= 300) return { ok: true, url: url, saved: false };
+  if (cache.get(ck)) return { ok: true, url: url, saved: true, dup: true };
+  cache.put('ref_n', String(n + 1), 3600); cache.put(ck, '1', 3600);
+  append_('Referrals', { id: nextRefId_(), time: now_(), name: name, code: code, came: '', checked_by: '', checked_at: '' });
+  return { ok: true, url: url, saved: true };
+}
+function nextRefId_() { return 'R' + ('000' + (referrals_().reduce((m, r) => Math.max(m, parseInt(String(r.id).slice(1), 10) || 0), 0) + 1)).slice(-4); }
+/** The check-in desk (or a lead): a friend who came says who invited them, but never used the link. */
+function referralAdd_(me, b) {
+  const code = cleanCode_(b.code), name = cleanFirst_(b.name), came = yn_(b.came) === 'yes', a = ambByCode_(code);
+  if (shownName_(name).length < 2) return { ok: false, error: 'Write their first name.' };
+  if (!code) return { ok: false, error: 'Which code? Ask “who invited you?”' };
+  if (!isLead_(me) && !checkinOpen_() && !(a && a.buddy === me.key)) return { ok: false, code: 'forbidden', error: 'Before the event, only leads (or the buddy) add names by hand.' };
+  const r = append_('Referrals', { id: nextRefId_(), time: now_(), name: name, code: code, came: came ? 'yes' : '', checked_by: came ? me.name : '', checked_at: came ? now_() : '' });
+  log_(me.name, '', came ? 'Checked in (referral)' : 'Referral added', code + (a ? ' — ' + first_(a) : ''));
+  return { ok: true, referral: referralOut_(r) };
+}
+/** Tick "came" at check-in, fix a name or a code (leads), or delete a row (leads). */
+function referralUpdate_(me, b) {
+  const r = referrals_().find(x => x.id === String(b.id || ''));
+  if (!r || !seesRef_(me, r)) return { ok: false, error: 'No such name.' };
+  if (b.delete) {
+    if (!isLead_(me)) return { ok: false, code: 'forbidden', error: 'Only leads delete names.' };
+    deleteRows_('Referrals', [r]); log_(me.name, '', 'Referral removed', cleanCode_(r.code));
+    return { ok: true, deleted: r.id };
+  }
+  if (b.came !== undefined) {
+    const c = yn_(b.came) === 'yes';
+    r.came = c ? 'yes' : ''; r.checked_by = c ? me.name : ''; r.checked_at = c ? now_() : '';
+    log_(me.name, '', c ? 'Checked in (referral)' : 'Check-in undone (referral)', cleanCode_(r.code));
+  }
+  if (b.name !== undefined) { const v = cleanFirst_(b.name); if (shownName_(v).length < 2) return { ok: false, error: 'Write their first name.' }; r.name = v; }
+  if (b.code !== undefined) { if (!isLead_(me)) return { ok: false, code: 'forbidden', error: 'Only leads change a code.' }; const c = cleanCode_(b.code); if (!c) return { ok: false, error: 'Write the code.' }; r.code = c; }
+  write_('Referrals', r);
+  return { ok: true, referral: referralOut_(r) };
+}
+/** Deletes what referral links collected: friends' names (each row stays with its code and "came", so the numbers stay right)
+ *  and ambassadors' contacts, notes and page links. Runs by itself the day after referral_delete_after; admins can run it any time. */
+function purgeReferrals_(who) {
+  const rs = referrals_().filter(r => r.name), as = ambassadors_().filter(a => a.contact || a.note || a.token);
+  rs.forEach(r => { r.name = ''; }); writeMany_('Referrals', rs);
+  as.forEach(a => { a.contact = ''; a.note = ''; a.token = ''; }); writeMany_('Ambassadors', as);
+  if (rs.length || as.length) log_(who, '', 'Referral data deleted', `${rs.length} names, ${as.length} ambassadors' contacts and page links`);
+  return { names: rs.length, ambassadors: as.length };
+}
+function purgeAction_(me) { return Object.assign({ ok: true }, purgeReferrals_(me.name), ambData_(me)); }
+function autoPurge_() { if ((has_('Referrals') || has_('Ambassadors')) && today_() > refDeleteDate_()) purgeReferrals_('system'); }
+/** Public, with the ambassador's private link (k + s): their own page. Never anyone else's contacts — the top 5 is first names + numbers. */
+function ambPage_(_, b) {
+  const a = findAmb_(b.k), s = String(b.s || '');
+  if (!a || !isAmb_(a) || !a.token || s.length < 16 || a.token !== s || ambStatus_(a) === 'left') return { ok: false, code: 'gone', error: 'This link does not work any more. Ask the organizer who gave it to you for a new one.' };
+  const S = S_(), counts = refCounts_(), x = counts[cleanCode_(a.code)] || NO_COUNT, buddy = a.buddy ? findPerson_(a.buddy) : null;
+  return { ok: true, version: HUB_VERSION, langs: langsOf_(S.languages), event: { name: event_(), city: S.city, start: S.event_start, end: S.event_end },
+    me: { first: first_(a), school: a.school || '', code: cleanCode_(a.code), link: refLink_(a.code), status: ambStatus_(a), n: x.n, came: x.came, week: x.week, score: ambScore_(x) },
+    on: referralsOn_(), started: checkinStarted_(), cap: refCap_(), top: ambTop_(counts, a.key),
+    buddy: buddy && buddy.active !== 'no' ? { name: first_(buddy), handle: /^@\w{4,}$/.test(buddy.handle || '') ? buddy.handle : '' } : null,
+    group: isUrl_(S.ambassador_group || '') ? S.ambassador_group : '', messages: texts_('amb_message'), rewards: texts_('referral_rewards'),
+    links: { signup: S.signup_url, telegram: S.telegram_channel || '', instagram: S.instagram || '' } };
+}
+/** Sunday: the ambassadors' week for the leads' report, and one message for each buddy about their own ambassadors. */
+function ambReport_() {
+  const list = ambassadors_().filter(a => isAmb_(a) && ambStatus_(a) === 'active');
+  if (!list.length) return { text: '', group: '', buddies: [] };
+  const c = refCounts_(), on = referralsOn_(), x = a => c[cleanCode_(a.code)] || NO_COUNT, weekAgo = fmt_(new Date(Date.now() - 7 * 864e5));
+  const all = referrals_(), week = all.filter(r => r.time >= weekAgo).length, top = ambTop_(c, '');
+  let text = `🎓 Ambassadors: ${list.length} active` + (on ? ` · ${week} new name${week === 1 ? '' : 's'} via their links this week (${all.length} in all)` : ' · referral names are off (Settings → Referrals)');
+  if (top.length) text += '\nTop 5: ' + top.map(t => `${t.name} ${t.score}`).join(' · ');
+  const quiet = on ? list.filter(a => !x(a).week) : [];
+  if (quiet.length) text += '\nNo new names in 7 days: ' + quiet.slice(0, 12).map(a => first_(a) + (a.buddy ? ` (buddy: ${firstOf_(a.buddy)})` : ' (no buddy)')).join(', ') + (quiet.length > 12 ? '…' : '');
+  const by = {}; list.forEach(a => { if (a.buddy) (by[a.buddy] = by[a.buddy] || []).push(a); });
+  const buddies = Object.keys(by).map(findPerson_).filter(p => p && p.active !== 'no').map(p => [p, `🎓 ${S_().greeting || 'Hi'}, ${first_(p)}! Your ambassadors this week:\n` +
+    by[p.key].map(a => `• ${a.name}${a.school ? ' (' + a.school + ')' : ''}: ` + (on ? `${x(a).week} new, ${x(a).n} in all` + (x(a).week ? '' : ' — message them this week') : `code ${cleanCode_(a.code)}`)).join('\n') +
+    `\n\n${hubUrl_('admin/ambassadors')}`]);
+  return { text: text, group: on && week ? `🎓 ${week} new name${week === 1 ? '' : 's'} via ambassador links this week` + (top.length ? ' · top: ' + top.slice(0, 3).map(t => `${t.name} ${t.score}`).join(', ') : '') : '', buddies: buddies };
+}
+
 // ================================================================== settings + lists (admin)
 function saveSettings_(me, b) {
   const v = b.values || {}, errs = [], out = {}, known = SETTINGS.map(d => d[0]);
   Object.keys(v).forEach(k => {
     if (known.indexOf(k) < 0) return;
-    let val = YESNO.indexOf(k) >= 0 ? yn_(v[k]) : clean_(v[k], /^(join_intro|tagline)/.test(k) ? 500 : 200);
+    let val = YESNO.indexOf(k) >= 0 ? yn_(v[k]) : clean_(v[k], /^(amb_message|referral_rewards)/.test(k) ? 1000 : /^(join_intro|tagline)/.test(k) ? 500 : 200);
     if (k === 'languages') { const want = String(val || '').toLowerCase().split(/[\s,;]+/).filter(Boolean), bad = want.filter(l => LANGS.indexOf(l) < 0); if (bad.length) errs.push(`Unknown language: ${bad.join(', ')} — the website knows ${LANGS.join(', ')}.`); val = langsOf_(val).join(','); }
     if (k === 'event_name' && !val) errs.push('The event name is required.');
     if (k === 'timezone' && val && !isTz_(val)) errs.push('Time zone must be an IANA name like Europe/Berlin.');
@@ -1599,6 +1844,9 @@ function saveSettings_(me, b) {
     if (k === 'signup_goal' && val) { const n = parseInt(val, 10); if (!(n >= 1 && n <= 100000)) errs.push('The signup goal is a number, e.g. 180.'); else val = String(n); }
     if (k === 'funding_per_signup' && val) { const f = Number(String(val).replace(',', '.').replace(/^\$/, '')); if (!(f > 0 && f < 1000)) errs.push('Funding per signup is an amount in USD, e.g. 3.25.'); else val = String(Math.round(f * 100) / 100); }
     if (k === 'inbox_alerts' && ['leads', 'group', 'no'].indexOf(val) < 0) errs.push('Inbox alerts: leads, group or no.');
+    if (k === 'referrals' && ['on', 'off'].indexOf(val) < 0) errs.push('Referral names: on or off.');
+    if (k === 'referral_delete_after' && val && !isDate_(val)) errs.push('The day referral names are deleted must be YYYY-MM-DD.');
+    if (k === 'referral_cap') { const n = parseInt(val, 10); if (!(n >= 1 && n <= 1000)) errs.push('The leaderboard cap is a number, e.g. 8.'); else val = String(n); }
     out[k] = val;
   });
   const start = out.event_start || S_().event_start, end = out.event_end || S_().event_end;
@@ -1765,6 +2013,15 @@ const ACTIONS = {
   'inbox.push': { level: 'public', post: true, lock: true, fn: pushInbox_ },
   'inbox.update': { level: 'lead', post: true, lock: true, fn: updateInbox_ },
   'feed.key': { level: 'admin', post: true, lock: true, fn: feedKeyAction_ },
+  'referral.check': { level: 'public', fn: referralCheck_ },
+  'referral.save': { level: 'public', post: true, lock: true, fn: referralSave_ },
+  'amb.page': { level: 'public', post: true, fn: ambPage_ },
+  'amb.save': { level: 'member', post: true, lock: true, fn: saveAmb_ },
+  'amb.link': { level: 'member', post: true, lock: true, fn: ambLink_ },
+  'amb.delete': { level: 'lead', post: true, lock: true, fn: deleteAmb_ },
+  'referral.add': { level: 'member', post: true, lock: true, fn: referralAdd_ },
+  'referral.update': { level: 'member', post: true, lock: true, fn: referralUpdate_ },
+  'referral.purge': { level: 'admin', post: true, lock: true, fn: purgeAction_ },
   'resource.save': { level: 'lead', post: true, lock: true, fn: saveResources_ },
   'resource.delete': { level: 'member', post: true, lock: true, fn: deleteResource_ },
   'person.add': { level: 'admin', post: true, lock: true, fn: addPerson_ },
@@ -1882,6 +2139,7 @@ function apiMe_(me, q) {
     signups: signupsOut_(), signin: S.signin_mode === 'invite' ? 'invite' : 'link', langs: langsOf_(S.languages),
   };
   if (lead) { const ib = inbox_(); out.inbox = ib.slice(0, 200).map(inboxOut_); out.inboxNew = ib.filter(r => (r.status || 'new') === 'new').length; }
+  if (lvl !== 'viewer') Object.assign(out, ambData_(me)); // ambassadors: all of them for leads, your own for everyone else
   if (!lead) out.tasks.concat(out.open).forEach(t => { t.resources = t.resources.filter(r => !r.leads); }); // links only leads may see stay out of members' tasks
   if (seeAll) {
     out.all = all.map(taskOut_);
@@ -1898,6 +2156,8 @@ function apiMe_(me, q) {
     out.people = people_().map(personOut_);
     const everyone = people_();
     out.applications = rows_('Applications').map(a => appOut_(a, everyone)).reverse();
+    const byApp = {}; ambassadors_().forEach(a => { if (a.app_id) byApp[a.app_id] = a.key; });
+    out.applications.forEach(x => { if (byApp[x.id]) x.amb = byApp[x.id]; });
     out.settings = settingsOut_();
     out.sponsors = sponsors_(true);
     out.sponsorTiers = SPONSOR_TIERS;
@@ -1910,8 +2170,8 @@ function apiMe_(me, q) {
 }
 function apiExport_() {
   const data = {};
-  ['Settings', 'People', 'Tasks', 'Log', 'Meetings', 'Rules', 'Milestones', 'Applications', 'Sponsors', 'Resources', 'Signups', 'Inbox'].forEach(n => { // never Invites (live sign-in codes)
-    if (['Signups', 'Inbox'].indexOf(n) >= 0 && !has_(n)) { data[n] = []; return; }
+  ['Settings', 'People', 'Tasks', 'Log', 'Meetings', 'Rules', 'Milestones', 'Applications', 'Sponsors', 'Resources', 'Signups', 'Inbox', 'Ambassadors', 'Referrals'].forEach(n => { // never Invites (live sign-in codes)
+    if (['Signups', 'Inbox', 'Ambassadors', 'Referrals'].indexOf(n) >= 0 && !has_(n)) { data[n] = []; return; }
     data[n] = rows_(n).map(r => { const o = {}; Object.keys(r).forEach(k => { if (k[0] !== '_' && ['token', 'chat_id', 'google_sub', 'sub'].indexOf(k) < 0) o[k] = r[k]; }); return o; });
   });
   return { ok: true, version: HUB_VERSION, exported: now_(), data: data };
@@ -2004,6 +2264,8 @@ function applyValidation_() {
     set('Milestones', 'kind', ['gate', 'deadline', 'event']); set('Milestones', 'public', ['yes', 'no']); set('Milestones', 'done', ['yes', 'no']);
     set('Applications', 'status', ['new', 'accepted', 'declined']);
     if (has_('Inbox')) set('Inbox', 'status', ['new', 'done', 'ignored']);
+    if (has_('Ambassadors')) { set('Ambassadors', 'status', AMB_STATUS); set('Ambassadors', 'kind', ['ambassador', 'channel']); }
+    if (has_('Referrals')) set('Referrals', 'came', ['', 'yes']);
   } catch (e) { /* cosmetic only */ }
 }
 
@@ -2151,6 +2413,7 @@ function emailHtml_(title, text, button) {
 function eveningReminders() {
   resetMemo_(); maybeUpgrade_();
   if (!hasAdmin_()) return;
+  try { autoPurge_(); } catch (e) { report_('Error', 'autoPurge: ' + String(e && e.stack || e)); } // referral names: deleted after referral_delete_after
   const nowS = now_(), tmr = fmt_(new Date(Date.now() + 864e5), 'yyyy-MM-dd'), g = S_().greeting || 'Hi';
   const tasks = rows_('Tasks').filter(t => ['Done', 'Dropped'].indexOf(t.status) < 0);
   team_().forEach(p => {
@@ -2183,9 +2446,12 @@ function weeklyReport() {
   if (next.length) full += '\nNEXT 7 DAYS:\n' + next.slice(0, 15).map(t => `• ${t.due.slice(5, 10)} ${nm(t.owner)}: ${t.title}`).join('\n') + (next.length > 15 ? `\n…and ${next.length - 15} more` : '') + '\n';
   if (silent.length) full += '\n🔇 Not on the hub for 5+ days: ' + silent.join(', ') + '\n';
   full += '\n' + progressText_();
+  const amb = ambReport_();
+  if (amb.text) full += '\n\n' + amb.text;
   notifyLeads_({ text: full, subject: `Weekly report — ${days} days to go`, button: ['Open the dashboard', hubUrl_('admin')] });
+  amb.buddies.forEach(x => { if (!isLead_(x[0])) notify_(x[0], { text: x[1] }); }); // leads read it in their report
   const gm = `📊 Week report — ${days} days to ${event_()}\nDone this week: ${done7.length} · Overdue: ${over.length}\n` + (next.length ? 'Next 7 days:\n' + next.slice(0, 6).map(t => `• ${t.due.slice(5, 10)} ${nm(t.owner)}: ${t.title}`).join('\n') : 'Nothing due next week.') +
-    (signupLine_() ? '\n' + signupLine_() : '');
+    (signupLine_() ? '\n' + signupLine_() : '') + (amb.group ? '\n' + amb.group : '');
   if (S_().group_done_posts !== 'no') postGroup_(gm);
   log_('system', '', 'Weekly report', `done ${done7.length}, overdue ${over.length}`);
   return full;

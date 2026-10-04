@@ -87,8 +87,107 @@ const T = {
   },
 };
 
+/** The referral page (#/r/CODE), the ambassador's own page (#/amb) and their poster. Ambassadors and their friends are students: plain, friendly words. */
+const AMB = {
+  en: {
+    i_ambassador: 'School ambassador (bring my school)',
+    refBy: '{name} invited you!', refLede: 'Make your own video game in two days. Free, for ages 13–18, no experience needed.',
+    refName: 'Your first name', refAge: 'I am 13–18 years old', refAgeNo: 'Haven is for ages 13–18. Older? You can help as a mentor or volunteer.',
+    refGo: 'Next: sign up', refSkip: 'Skip — go straight to the signup page', nameShort: 'Write your first name.',
+    refPrivacy: 'We save only your first name and this code, so we know who invited you. We delete them on {date}.',
+    refNext: 'Last step: the official signup on Hack Club\'s page (1 minute).', refOpen: 'Open the signup page', refGoing: 'Taking you to the signup page…',
+    refNoSignup: 'Signups are not open yet. Check our channel for news.',
+    ambHi: 'Hi, {name}!', ambLede: 'You are a {event} ambassador. Your job is simple: get friends from your school to sign up with your link.',
+    ambLink: 'Your link', ambCode: 'Code', ambCopy: 'Copy', ambCopied: 'Copied!', ambShare: 'Share in Telegram',
+    ambQr: 'Your QR code', ambQrSub: 'Friends scan it with their phone camera.', ambPoster: 'A4 poster with your QR code', ambSaveQr: 'Save the QR code',
+    ambNumbers: 'Your numbers', ambSigned: 'signed up with your link', ambCame: 'came to the event', ambWeek: '{n} this week',
+    ambOff: 'Friends go straight to the official signup page for now. Your numbers show here once counting starts.',
+    ambRewards: 'Rewards', ambRewardsSub: 'given at the event, when your friends come',
+    ambTop: 'Top 5 ambassadors', ambTopNames: 'by friends who signed up', ambTopCame: 'by friends who came', ambTopNone: 'Nobody yet — be the first!', ambYou: 'you',
+    ambHow: 'How to do it', ambHow1: 'Send the message below to your class Telegram group.', ambHow2: 'Print the poster and put it up at school — ask a teacher first.',
+    ambHow3: 'Post a story with your link or QR code.', ambHow4: 'Tell 5 friends in person. This works best.',
+    ambMsg: 'Message for your class group', ambGroup: 'Ambassadors\' group', ambGroupBtn: 'Open the group', ambBuddy: 'Questions? Write to {name}',
+    ambGone: 'This link does not work any more. Ask the organizer who gave it to you for a new one.', ambPaused: 'Your ambassador link is paused for now. Your organizer will tell you more.',
+    shareMsg: 'Hi! {event} is a free game jam for ages 13–18: you make your own video game in two days, no experience needed. Sign up with my link: {link}',
+    posterTitle: 'Make your own video game in 2 days', posterFacts: 'Free · ages 13–18 · no experience needed', posterScan: 'Scan to sign up', posterBy: 'Invited by {name}',
+    posterPrint: 'Print', posterShowName: 'Show my name on the poster', posterBack: '← Back to my page',
+    welcome: '🎉 Congratulations, {name} — you are a {event} ambassador!\n\nYour page (only for you) — your link, QR code, poster and numbers:\n{page}\n\nYour link for friends: {link}\n\nYour job: get friends from your school to sign up with it. Questions? Write to me.',
+    boardTitle: '🏆 Ambassadors — top 5 ({date})', boardFoot: 'Rewards are given at the event, when your friends come. Your link and numbers are on your page.', boardNone: 'No names yet — send your link!',
+  },
+  uz: {
+    i_ambassador: 'Maktab ambassadori (maktabimni olib kelaman)',
+    refBy: 'Seni {name} taklif qildi!', refLede: 'Ikki kunda oʻz video oʻyiningni yarat. Bepul, 13–18 yoshdagilar uchun, tajriba shart emas.',
+    refName: 'Isming', refAge: 'Men 13–18 yoshdaman', refAgeNo: 'Haven 13–18 yoshdagilar uchun. Kattaroqmisan? Mentor yoki koʻngilli sifatida yordam bera olasan.',
+    refGo: 'Keyingi qadam: roʻyxatdan oʻtish', refSkip: 'Oʻtkazib yuborish — toʻgʻridan-toʻgʻri roʻyxatdan oʻtish', nameShort: 'Ismingni yoz.',
+    refPrivacy: 'Biz faqat isming va shu kodni saqlaymiz — seni kim taklif qilganini bilish uchun. Ularni {date} kuni oʻchirib tashlaymiz.',
+    refNext: 'Oxirgi qadam: Hack Club sahifasida rasmiy roʻyxatdan oʻtish (1 daqiqa).', refOpen: 'Roʻyxatdan oʻtish sahifasini ochish', refGoing: 'Roʻyxatdan oʻtish sahifasiga oʻtyapmiz…',
+    refNoSignup: 'Roʻyxatdan oʻtish hali ochilmagan. Yangiliklar — kanalimizda.',
+    ambHi: 'Salom, {name}!', ambLede: 'Sen {event} ambassadorisan. Vazifang oddiy: maktabingdagi doʻstlaring sening havolang orqali roʻyxatdan oʻtsin.',
+    ambLink: 'Sening havolang', ambCode: 'Kod', ambCopy: 'Nusxalash', ambCopied: 'Nusxalandi!', ambShare: 'Telegramda ulashish',
+    ambQr: 'Sening QR koding', ambQrSub: 'Doʻstlaring uni telefon kamerasi bilan skanerlaydi.', ambPoster: 'QR kodli A4 plakat', ambSaveQr: 'QR kodni saqlash',
+    ambNumbers: 'Sening natijalaring', ambSigned: 'sening havolang orqali roʻyxatdan oʻtdi', ambCame: 'tadbirga keldi', ambWeek: 'bu hafta: {n}',
+    ambOff: 'Hozircha doʻstlaring toʻgʻridan-toʻgʻri rasmiy roʻyxat sahifasiga oʻtadi. Hisob boshlanganda natijalaring shu yerda chiqadi.',
+    ambRewards: 'Mukofotlar', ambRewardsSub: 'tadbir kuni, doʻstlaring kelganda beriladi',
+    ambTop: 'Eng faol 5 ambassador', ambTopNames: 'roʻyxatdan oʻtgan doʻstlar soni boʻyicha', ambTopCame: 'kelgan doʻstlar soni boʻyicha', ambTopNone: 'Hali hech kim yoʻq — birinchi boʻl!', ambYou: 'sen',
+    ambHow: 'Qanday qilish kerak', ambHow1: 'Pastdagi xabarni sinfingning Telegram guruhiga yubor.', ambHow2: 'Plakatni chop etib, maktabga os — avval oʻqituvchidan ruxsat soʻra.',
+    ambHow3: 'Havolang yoki QR koding bilan story joyla.', ambHow4: '5 ta doʻstingga shaxsan ayt. Bu eng yaxshi ishlaydi.',
+    ambMsg: 'Sinf guruhing uchun xabar', ambGroup: 'Ambassadorlar guruhi', ambGroupBtn: 'Guruhni ochish', ambBuddy: 'Savol boʻlsa, yoz: {name}',
+    ambGone: 'Bu havola endi ishlamaydi. Uni senga bergan tashkilotchidan yangisini soʻra.', ambPaused: 'Ambassador havolang hozircha toʻxtatilgan. Tashkilotching batafsil aytib beradi.',
+    shareMsg: 'Salom! {event} — 13–18 yoshdagilar uchun bepul geymjem: ikki kunda oʻz video oʻyiningni yaratasan, tajriba shart emas. Mening havolam orqali roʻyxatdan oʻt: {link}',
+    posterTitle: 'Ikki kunda oʻz video oʻyiningni yarat', posterFacts: 'Bepul · 13–18 yosh · tajriba shart emas', posterScan: 'Skanerla va roʻyxatdan oʻt', posterBy: 'Taklif qiluvchi: {name}',
+    posterPrint: 'Chop etish', posterShowName: 'Plakatda ismimni koʻrsatish', posterBack: '← Sahifamga qaytish',
+    welcome: '🎉 Tabriklaymiz, {name} — sen {event} ambassadorisan!\n\nSening sahifang (faqat sen uchun) — havolang, QR koding, plakat va natijalaring:\n{page}\n\nDoʻstlaring uchun havolang: {link}\n\nVazifang: maktabingdagi doʻstlaring shu havola orqali roʻyxatdan oʻtsin. Savol boʻlsa, menga yoz.',
+    boardTitle: '🏆 Ambassadorlar — eng faol 5 ({date})', boardFoot: 'Mukofotlar tadbir kuni, doʻstlaring kelganda beriladi. Havolang va natijalaring — sahifangda.', boardNone: 'Hali natija yoʻq — havolangni yubor!',
+  },
+  ru: {
+    i_ambassador: 'Амбассадор школы (приведу свою школу)',
+    refBy: 'Тебя пригласил(а) {name}!', refLede: 'Создай свою видеоигру за два дня. Бесплатно, для 13–18 лет, опыт не нужен.',
+    refName: 'Твоё имя', refAge: 'Мне 13–18 лет', refAgeNo: 'Haven — для 13–18 лет. Старше? Можешь помочь как ментор или волонтёр.',
+    refGo: 'Дальше: регистрация', refSkip: 'Пропустить — сразу к регистрации', nameShort: 'Напиши своё имя.',
+    refPrivacy: 'Мы сохраняем только твоё имя и этот код — чтобы знать, кто тебя пригласил. Удалим их {date}.',
+    refNext: 'Последний шаг: официальная регистрация на странице Hack Club (1 минута).', refOpen: 'Открыть страницу регистрации', refGoing: 'Переходим на страницу регистрации…',
+    refNoSignup: 'Регистрация ещё не открыта. Следи за новостями в нашем канале.',
+    ambHi: 'Привет, {name}!', ambLede: 'Ты амбассадор {event}. Задача простая: друзья из твоей школы регистрируются по твоей ссылке.',
+    ambLink: 'Твоя ссылка', ambCode: 'Код', ambCopy: 'Копировать', ambCopied: 'Скопировано!', ambShare: 'Поделиться в Telegram',
+    ambQr: 'Твой QR-код', ambQrSub: 'Друзья сканируют его камерой телефона.', ambPoster: 'Плакат A4 с твоим QR-кодом', ambSaveQr: 'Сохранить QR-код',
+    ambNumbers: 'Твои результаты', ambSigned: 'зарегистрировались по твоей ссылке', ambCame: 'пришли на мероприятие', ambWeek: 'за неделю: {n}',
+    ambOff: 'Пока друзья попадают сразу на официальную страницу регистрации. Твои результаты появятся здесь, когда начнётся подсчёт.',
+    ambRewards: 'Награды', ambRewardsSub: 'выдаются на мероприятии, когда друзья придут',
+    ambTop: 'Топ-5 амбассадоров', ambTopNames: 'по числу зарегистрированных друзей', ambTopCame: 'по числу пришедших друзей', ambTopNone: 'Пока никого — будь первым!', ambYou: 'ты',
+    ambHow: 'Как это сделать', ambHow1: 'Отправь сообщение ниже в Telegram-чат своего класса.', ambHow2: 'Распечатай плакат и повесь в школе — сначала спроси учителя.',
+    ambHow3: 'Выложи сторис со своей ссылкой или QR-кодом.', ambHow4: 'Расскажи лично 5 друзьям. Это работает лучше всего.',
+    ambMsg: 'Сообщение для чата класса', ambGroup: 'Группа амбассадоров', ambGroupBtn: 'Открыть группу', ambBuddy: 'Вопросы? Пиши: {name}',
+    ambGone: 'Эта ссылка больше не работает. Попроси новую у организатора, который её дал.', ambPaused: 'Твоя ссылка амбассадора пока на паузе. Организатор расскажет подробнее.',
+    shareMsg: 'Привет! {event} — бесплатный геймджем для 13–18 лет: за два дня делаешь свою видеоигру, опыт не нужен. Регистрируйся по моей ссылке: {link}',
+    posterTitle: 'Создай свою видеоигру за 2 дня', posterFacts: 'Бесплатно · 13–18 лет · опыт не нужен', posterScan: 'Сканируй и регистрируйся', posterBy: 'Приглашает: {name}',
+    posterPrint: 'Печать', posterShowName: 'Показать моё имя на плакате', posterBack: '← Назад на мою страницу',
+    welcome: '🎉 Поздравляем, {name} — ты амбассадор {event}!\n\nТвоя страница (только для тебя) — ссылка, QR-код, плакат и результаты:\n{page}\n\nТвоя ссылка для друзей: {link}\n\nЗадача: друзья из твоей школы регистрируются по ней. Вопросы — пиши мне.',
+    boardTitle: '🏆 Амбассадоры — топ-5 ({date})', boardFoot: 'Награды выдаются на мероприятии, когда друзья придут. Ссылка и результаты — на твоей странице.', boardNone: 'Пока без результатов — отправь свою ссылку!',
+  },
+};
+Object.keys(AMB).forEach(l => Object.assign(T[l], AMB[l]));
+
+/** Dates in the page's language. Uzbek is written out here: many browsers (and app web views) have no Uzbek month names and print "M11 14". */
+const UZ_MONTHS = ['yanvar', 'fevral', 'mart', 'aprel', 'may', 'iyun', 'iyul', 'avgust', 'sentabr', 'oktabr', 'noyabr', 'dekabr'];
+const UZ_DAYS = ['Yakshanba', 'Dushanba', 'Seshanba', 'Chorshanba', 'Payshanba', 'Juma', 'Shanba'];
+const at = ymd => new Date(String(ymd).slice(0, 10) + 'T12:00:00Z');
+/** "14-noyabr" · "14 ноября" · "14 November" (weekday: "Shanba, 14-noyabr" · "сб, 14 нояб."). */
+export function dayIn(ymd, lang, { weekday = false } = {}) {
+  const d = at(ymd);
+  if (isNaN(d)) return String(ymd || '');
+  if (lang === 'uz') return (weekday ? UZ_DAYS[d.getUTCDay()] + ', ' : '') + d.getUTCDate() + '-' + UZ_MONTHS[d.getUTCMonth()];
+  return d.toLocaleDateString(lang === 'ru' ? 'ru-RU' : 'en-GB', Object.assign({ day: 'numeric', month: weekday ? 'short' : 'long', timeZone: 'UTC' }, weekday ? { weekday: 'short' } : {}));
+}
+/** "14–15-noyabr, 2026" · "14–15 ноября 2026" · "14–15 November 2026" — two full dates when the months differ. */
+export function rangeIn(start, end, lang) {
+  const a = at(start), b = at(end || start), y = String(end || start).slice(0, 4);
+  if (!end || end === start) return dayIn(start, lang) + (lang === 'uz' ? ', ' : ' ') + y;
+  if (a.getUTCMonth() === b.getUTCMonth()) return a.getUTCDate() + '–' + dayIn(end, lang) + (lang === 'uz' ? ', ' : ' ') + y;
+  return dayIn(start, lang) + ' – ' + dayIn(end, lang) + (lang === 'uz' ? ', ' : ' ') + y;
+}
+
 /** What the Apply form stores: the English label (Dashboard → Applications and the areas use it), whatever language the form was in. */
-export const INTERESTS = ['design', 'social', 'outreach', 'sponsors', 'tech', 'event', 'mentor', 'other'];
+export const INTERESTS = ['design', 'social', 'outreach', 'sponsors', 'tech', 'event', 'ambassador', 'mentor', 'other'];
 export const FREE = ['weekdays', 'weekends', 'event'];
 export const stored = (kind, k) => T.en[kind + k];
 
