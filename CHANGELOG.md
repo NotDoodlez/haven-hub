@@ -11,6 +11,7 @@ A hub keeps working when the website is newer than its backend: new pages appear
 - **Inbox.** `apps-script/inbox-watcher.gs` runs in your city mailbox's own Google account (the hub never gets permission to read mail) and reports new emails every 5 minutes. Leads see them in *Inbox*, get a Telegram message (`inbox_alerts`), and mark each one handled, ignored, or turn it into a task.
 - **Uploads on Files.** Anyone on the team uploads a picture, PDF, Office file, ZIP, MP4/MP3, font or text file (up to about 6 MB) — team-only by default. Files live in a private Drive folder (Google Sheet hubs) or `data/files` (own server) and are only handed to people allowed to see the tile. Uploaders and leads delete them.
 - **Feed key** (Settings → Connections): lets outside scripts call `inbox.push` and `signups.push` — nothing else. Renew it to switch every script off.
+- **Referral page, part 1.** `apps-script/referrals/Code.gs` — a small separate web app on its own “Referrals” Sheet (`time · name · code`): a visitor opens `?code=…`, types their name, the row is saved and they go on to HQ's signup page with `?ref=<code>`, so HQ counts the referral. Set `SIGNUP_URL` and `EVENT_NAME` at the top for your city. It is not part of the hub backend.
 - Setup wizard: invites on/off and the page languages. Demo and showcase updated. `apply` answers `dup: true` for a repeat; `ping` reports the sign-in mode.
 - Fixes: the server's allowed-origins list was read as one string; a reminders test failed near midnight in some time zones.
 
